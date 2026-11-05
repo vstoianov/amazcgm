@@ -1,0 +1,66 @@
+{
+  "configVersion": "v3",
+  "app": {
+    "appId": 1125714,
+    "appName": "AmazCGM",
+    "appType": "app",
+    "version": {
+      "code": 191,
+      "name": "1.6.4"
+    },
+    "icon": "icon.png",
+    "vender": "vstoianov",
+    "description": "AmazCGM: direct BLE connection to a Libre 2+ EU sensor on Amazfit Bip Max",
+    "_pikeCompatibled": 1
+  },
+  "permissions": [
+    "data:os.device.info",
+    "device:os.local_storage",
+    "device:os.ble",
+    "device:os.bg_service",
+    "device:os.notification",
+    "device:os.alarm"
+  ],
+  "runtime": {
+    "apiVersion": {
+      "compatible": "4.0.0",
+      "target": "4.4.0",
+      "minVersion": "4.0.0"
+    }
+  },
+  "debug": false,
+  "targets": {
+    "bip-max": {
+      "module": {
+        "page": {
+          "pages": ["page/index"]
+        },
+        "app-service": {
+          "services": ["app-service/sensor"]
+        },
+        "app-side": {
+          "path": "app-side/index"
+        },
+        "setting": {
+          "path": "setting/index"
+        }
+      },
+      "platforms": [
+        {
+          "name": "bip-max",
+          "deviceSource": 11206915,
+          "st": "s",
+          "sr": "w432",
+          "dw": 432
+        }
+      ],
+      "designWidth": 432
+    }
+  },
+  "i18n": {
+    "en-US": {
+      "appName": "AmazCGM"
+    }
+  },
+  "defaultLanguage": "en-US"
+}
