@@ -8,7 +8,8 @@
   "scripts": {
     "test": "node shared/crypto.test.mjs",
     "preview": "zeus preview",
-    "build": "zeus build"
+    "build": "zeus build",
+    "release": "bash scripts/release.sh"
   },
   "_moduleAliases": {
     "zeppos-app-utils": "node_modules/@zeppos/zeus-cli/private-modules/zeppos-app-utils"
