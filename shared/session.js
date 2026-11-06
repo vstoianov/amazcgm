@@ -307,7 +307,6 @@ function applyParsedScan(incoming, raw) {
     saveSensor({
       ...prev,
       ...incoming,
-      payloads: { ...(prev.payloads || {}), ...(incoming.payloads || {}) },
       calibration
     })
     store.setItem(SCAN_KEY, raw)

@@ -1,12 +1,10 @@
 import { BaseSideService } from '@zeppos/zml/base-side'
 import { settingsLib } from '@zeppos/zml/base-side'
-import {
-  asScanText,
-  scanFingerprintFromText
-} from '../shared/sensor-config'
+import { asScanText, scanFingerprintFromText } from '../shared/sensor-config'
 
-const FETCH_MS = 4000
 const STORE_CHUNK = 800
+/** Settings keys left over from the removed Wi-Fi fetch. */
+const STALE_KEYS = ['scannerUrl', 'scannerUrlOkAt', 'scanFetchReq', 'scanFetchDone', 'scanFetchMsg']
 let logParts = []
 
 function storeBleTrace(full) {
@@ -42,10 +40,6 @@ function getScanJson() {
   return asScanText(settingsLib.getItem('scanJson'))
 }
 
-function scannerUrl() {
-  return String(settingsLib.getItem('scannerUrl') || '').trim()
-}
-
 function looksLikeScan(text) {
   try {
     const data = JSON.parse(text)
@@ -77,24 +71,23 @@ function scanMeta(json) {
   }
 }
 
-function fetchScan(url) {
-  if (!url || typeof fetch !== 'function') return Promise.resolve('')
-  const controller = typeof AbortController === 'function' ? new AbortController() : null
-  const timer = controller ? setTimeout(() => controller.abort(), FETCH_MS) : null
-  const opts = controller ? { signal: controller.signal } : {}
-  return fetch(url, opts)
-    .then((res) => (res && res.ok ? res.text() : ''))
-    .then((text) => (looksLikeScan(text) ? String(text).trim() : ''))
-    .catch(() => '')
-    .then((json) => {
-      if (timer) clearTimeout(timer)
-      return json
-    })
+function serialOf(json) {
+  try {
+    return String(JSON.parse(json).serial || '')
+  } catch (e) {
+    return ''
+  }
 }
 
 AppSideService(
   BaseSideService({
-    onInit() {},
+    onInit() {
+      STALE_KEYS.forEach((key) => {
+        try {
+          settingsLib.removeItem(key)
+        } catch (e) {}
+      })
+    },
     onRequest(req, res) {
       if (req.method === 'PUT_LOG') {
         const p = (req && req.params) || {}
@@ -130,59 +123,40 @@ AppSideService(
         return
       }
       if (req.method === 'GET_SCAN_JSON') {
-        const emptyScan = {
-          json: '',
-          source: '',
-          fingerprint: '',
-          uid: '',
-          patchInfo: '',
-          unlockCode: 0
-        }
-        const replyStored = () => {
-          const stored = getScanJson()
-          if (stored && looksLikeScan(stored)) {
-            res(null, { ...scanMeta(stored), source: 'settings' })
-            return
-          }
-          if (req.params && req.params.settingsOnly) {
-            res(null, emptyScan)
-            return
-          }
-          fetchScan(scannerUrl()).then((json) => {
-            if (json) {
-              settingsLib.setItem('scanJson', json)
-              res(null, { ...scanMeta(json), source: 'scanner' })
-              return
-            }
-            res(null, emptyScan)
+        // The scan pasted in Zepp settings; there is no other source.
+        const stored = getScanJson()
+        if (stored && looksLikeScan(stored)) {
+          res(null, { ...scanMeta(stored), serial: serialOf(stored), source: 'settings', error: '' })
+        } else {
+          res(null, {
+            json: '',
+            source: '',
+            fingerprint: '',
+            uid: '',
+            patchInfo: '',
+            unlockCode: 0,
+            serial: '',
+            error: 'no-scan'
           })
         }
-        if (req.params && req.params.refresh) {
-          fetchScan(scannerUrl()).then((json) => {
-            if (json) {
-              settingsLib.setItem('scanJson', json)
-              settingsLib.setItem('scanJsonLatest', json)
-              res(null, { ...scanMeta(json), source: 'scanner' })
-              return
-            }
-            replyStored()
-          })
-          return
-        }
-        replyStored()
         return
       }
       res(null, {})
     },
     onSettingsChange({ key, newValue }) {
       const json = key === 'scanJson' ? asScanText(newValue) : ''
-      if (json) {
+      if (json) this.pushScan(json)
+    },
+
+    pushScan(json) {
+      try {
         this.call({
           method: 'APPLY_SCAN',
           params: { json, unlockCode: unlockCodeOf(json) }
         })
-      }
+      } catch (e) {}
     },
+
     onRun() {},
     onDestroy() {}
   })

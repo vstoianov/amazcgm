@@ -1,13 +1,7 @@
 import { align, text_style } from '@zos/ui'
-import { getDeviceInfo } from '@zos/device'
-import { px } from '@zos/utils'
-import { SCALE } from './index.s.layout.js'
+import { W, H, ROUND, sp, rowInset } from './index.s.layout.js'
 
-export const { width: W, height: H } = getDeviceInfo()
-
-function sp(v) {
-  return Math.max(1, Math.round(px(v) * SCALE))
-}
+export { W, H }
 
 const COLORS = {
   text: 0xffffff,
@@ -18,18 +12,29 @@ const COLORS = {
   cardHi: 0x1a2a32
 }
 
-const INSET_X = Math.max(sp(24), Math.round(W * 0.065))
+// Round screens: content column narrower, title and Back button moved in
+// from the top and bottom edge of the circle.
+const INSET_X = Math.max(sp(24), Math.round(W * (ROUND ? 0.14 : 0.065)))
 const CONTENT_W = W - INSET_X * 2
-const TITLE_Y = Math.round(H * 0.028)
+const TITLE_Y = Math.round(H * (ROUND ? 0.075 : 0.028))
 const TITLE_H = Math.round(H * 0.072)
 const BACK_H = Math.round(H * 0.10)
-const BACK_Y = H - BACK_H - Math.round(H * 0.024)
+const BACK_Y = H - BACK_H - Math.round(H * (ROUND ? 0.07 : 0.024))
+
+// Left edge for a band y..y+h. Round screens keep it inside the circle; the
+// Bip Max layout keeps its original margins.
+function bandX(y, h, minX) {
+  if (!ROUND) return minX
+  return Math.max(minX, rowInset(y, y + h) + sp(8))
+}
+
+const TITLE_X = bandX(TITLE_Y, TITLE_H, sp(24))
 
 function screenTitle(text) {
   return {
-    x: sp(24),
+    x: TITLE_X,
     y: TITLE_Y,
-    w: W - sp(48),
+    w: W - TITLE_X * 2,
     h: TITLE_H,
     color: COLORS.accent,
     text_size: sp(28),
@@ -41,10 +46,11 @@ function screenTitle(text) {
 
 function backButton(y) {
   const top = y != null ? y : BACK_Y
+  const x = bandX(top, BACK_H, INSET_X)
   return {
-    x: INSET_X,
+    x: x,
     y: top,
-    w: CONTENT_W,
+    w: W - x * 2,
     h: BACK_H,
     radius: Math.round(BACK_H / 2),
     normal_color: COLORS.cardHi,
@@ -80,14 +86,14 @@ export const MENU_LIST = {
   x: INSET_X,
   y: TITLE_Y + TITLE_H + sp(6),
   w: CONTENT_W,
-  h: H - (TITLE_Y + TITLE_H + sp(14))
+  h: H - (TITLE_Y + TITLE_H + sp(14)) - (ROUND ? Math.round(H * 0.06) : 0)
 }
 
 export const MENU_ITEM_H = Math.round(H * 0.175)
 export const MENU_ITEM_SPACE = sp(12)
 
 export const MENU_ITEMS = [
-  { label: 'Sync from phone', sub: 'Bluetooth / Zepp' },
+  { label: 'Sync from phone', sub: 'Bluetooth from Libre2 Key' },
   { label: 'Chart range', sub: '3 hours' },
   { label: 'Alarms', sub: '3.9 – 10.0 mmol/L' },
   { label: 'Calibrate', sub: 'Blood glucose ref' },
@@ -99,14 +105,29 @@ export const MENU_ITEMS = [
 export function buildMenuItems(meta) {
   const m = meta || {}
   return [
-    { label: 'Sync from phone', sub: m.syncSub || 'Bluetooth / Zepp' },
+    { label: 'Sync from phone', sub: m.syncSub || 'Bluetooth from Libre2 Key' },
     { label: 'Chart range', sub: m.rangeSub || '3 hours' },
     { label: 'Alarms', sub: m.alarmsSub || '3.9 – 10.0 mmol/L' },
     { label: 'Calibrate', sub: m.calSub || 'Blood glucose ref' },
     { label: 'Info', sub: m.infoSub || 'Sensor & status' },
     { label: 'Send log', sub: 'Diagnostics' },
+    { label: 'Nearby devices', sub: m.nearbySub || 'Seen by the last sync' },
     { label: 'Back', sub: 'Return to chart' }
   ]
+}
+
+/** Rows for the "Nearby devices" screen; the last row returns to the menu. */
+export function nearbyItems(sample) {
+  const rows = (sample || []).map((d) => ({
+    label: (d.name || ('…' + String(d.mac || '').slice(-8))).slice(0, 16),
+    sub:
+      (d.svc ? 'svc ' + d.svc : d.sdUuid ? 'sd ' + d.sdUuid : 'no uuid') +
+      ' · ' + (d.rssi != null ? d.rssi + ' dB' : '') +
+      (d.phase ? ' · p' + d.phase : '')
+  }))
+  if (!rows.length) rows.push({ label: 'Nothing seen', sub: 'Run Sync from phone first' })
+  rows.push({ label: 'Back', sub: 'Return to menu' })
+  return rows
 }
 
 export function menuListProps(onClick, items) {
@@ -258,11 +279,14 @@ const CAL_HINT_H = Math.round(H * 0.044)
 const CAL_SENSOR_H = Math.round(H * 0.052)
 const CAL_REF_H = Math.round(H * 0.135)
 
+// Full-width text row; on round screens it is kept inside the circle.
+function calRow(y, h) {
+  const x = ROUND ? bandX(y, h, INSET_X) : sp(16)
+  return { x: x, y: y, w: W - x * 2, h: h }
+}
+
 export const CAL_HINT = {
-  x: sp(16),
-  y: CAL_TOP,
-  w: W - sp(32),
-  h: CAL_HINT_H,
+  ...calRow(CAL_TOP, CAL_HINT_H),
   color: COLORS.muted,
   text_size: sp(17),
   align_h: align.CENTER_H,
@@ -271,10 +295,7 @@ export const CAL_HINT = {
 }
 
 export const CAL_SENSOR = {
-  x: sp(16),
-  y: CAL_TOP + CAL_HINT_H,
-  w: W - sp(32),
-  h: CAL_SENSOR_H,
+  ...calRow(CAL_TOP + CAL_HINT_H, CAL_SENSOR_H),
   color: COLORS.muted,
   text_size: sp(21),
   align_h: align.CENTER_H,
@@ -283,10 +304,7 @@ export const CAL_SENSOR = {
 }
 
 export const CAL_REF = {
-  x: sp(16),
-  y: CAL_TOP + CAL_HINT_H + CAL_SENSOR_H,
-  w: W - sp(32),
-  h: CAL_REF_H,
+  ...calRow(CAL_TOP + CAL_HINT_H + CAL_SENSOR_H, CAL_REF_H),
   color: COLORS.text,
   text_size: sp(60),
   align_h: align.CENTER_H,

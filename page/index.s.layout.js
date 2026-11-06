@@ -5,17 +5,23 @@ import { getAlarms } from '../shared/session'
 
 export const { width: W, height: H } = getDeviceInfo()
 
-const minDim = Math.min(W || 432, H || 514)
-export const SCALE = Math.max(0.8, Math.min(1.3, minDim / 432))
+// Every supported round watch (T-Rex 3 / 3 Pro, Balance 2, Active Max) has a
+// square pixel grid; the Bip Max (432x514) does not.
+export const ROUND = Math.abs((W || 0) - (H || 0)) < 4
 
-function sp(v) {
-  return Math.max(1, Math.round(px(v) * SCALE))
+// One scale factor for the whole UI, designed at 432 px (Bip Max). A round
+// screen loses its corners, so it gets slightly smaller elements. px() is
+// not used here: it already scales by designWidth and would scale twice.
+const minDim = Math.min(W || 432, H || 514)
+export const SCALE = Math.max(0.8, Math.min(1.3, (minDim / 432) * (ROUND ? 0.92 : 1)))
+
+export function sp(v) {
+  return Math.max(1, Math.round(v * SCALE))
 }
 
-// Text that must stay legible: px() and SCALE both shrink on narrow
-// screens, so axis fonts get a floor in device pixels.
-function spText(v, minPx) {
-  return Math.max(Math.round(px(minPx)), sp(v))
+// Text that must stay legible gets a floor in device pixels.
+export function spText(v, minPx) {
+  return Math.max(minPx, sp(v))
 }
 
 export const COLORS = {
@@ -48,7 +54,7 @@ export function glucoseColor(mmol) {
   return COLORS.ok
 }
 
-export const CORNER_R = px(106)
+export const CORNER_R = 106
 
 export function cornerInset(y) {
   const r = CORNER_R
@@ -61,6 +67,19 @@ export function cornerInset(y) {
     return Math.ceil(r - Math.sqrt(Math.max(0, r * r - dy * dy)))
   }
   return 0
+}
+
+/** Pixels lost to the screen edge at row y (circle or rounded corners). */
+export function edgeInset(y) {
+  if (!ROUND) return cornerInset(y)
+  const r = W / 2
+  const dy = y - H / 2
+  return Math.ceil(r - Math.sqrt(Math.max(0, r * r - dy * dy)))
+}
+
+/** Side margin that keeps a horizontal band y1..y2 fully on screen. */
+export function rowInset(y1, y2) {
+  return Math.max(edgeInset(y1), edgeInset(y2))
 }
 
 export const CHART_MIN = 2
@@ -83,23 +102,63 @@ export const CHART_LINE_W = Math.max(2, sp(3))
 export const CHART_DOT_R = Math.max(3, sp(5))
 export const CHART_DOT_HALO_R = CHART_DOT_R + Math.max(1, sp(2))
 
+// Status row: clock left of the centre dot, battery right of it.
+const DOT_R = sp(8)
+const DOT_HALO_R = sp(12)
+const CLOCK_SIZE_MAX = Math.round(sp(36) * 1.5)
+// "88:88" is about 2.8 em wide in the system font.
+const CLOCK_EM_W = 2.8
+const CLOCK_GAP = sp(10)
+const EDGE_PAD = sp(8)
+
+// Glyph band of a clock of `size` centred at cy, and the width left for it
+// between the screen edge and the status dot.
+function clockRoom(cy, size) {
+  const half = Math.round(size * 0.36)
+  const inset = rowInset(cy - half, cy + half)
+  return Math.round(W / 2) - DOT_HALO_R - CLOCK_GAP - (inset + EDGE_PAD)
+}
+
+function statusHeight(size) {
+  return Math.max(Math.round(H * 0.11), size + sp(6))
+}
+
+// Move the row down (round screens only) until the full-size clock fits,
+// then shrink the clock if it still does not.
+function fitStatusRow() {
+  const size = CLOCK_SIZE_MAX
+  const need = Math.ceil(size * CLOCK_EM_W)
+  const statusH = statusHeight(size)
+  let top = Math.round(H * 0.045)
+  const maxTop = ROUND ? Math.round(H * 0.17) : top
+  while (top < maxTop && clockRoom(top + Math.round(statusH / 2), size) < need) {
+    top += sp(2)
+  }
+  const room = clockRoom(top + Math.round(statusH / 2), size)
+  const fitted = Math.max(sp(28), Math.min(size, Math.floor(room / CLOCK_EM_W)))
+  return { top: top, size: fitted, statusH: statusHeight(fitted) }
+}
+
+const STATUS_FIT = fitStatusRow()
+
 // Vertical rhythm matching watchCGM GlanceScreen proportions
-const TOP_PAD = Math.round(H * 0.045)
-const STATUS_H = Math.round(H * 0.11)
+const TOP_PAD = STATUS_FIT.top
+const STATUS_H = STATUS_FIT.statusH
 const HERO_Y = TOP_PAD + STATUS_H
-const HERO_H = Math.round(H * 0.20)
+const HERO_H = Math.round(H * (ROUND ? 0.18 : 0.2))
 const SUB_Y = HERO_Y + HERO_H
 const SUB_H = Math.round(H * 0.068)
 const CHART_Y = SUB_Y + SUB_H + sp(4)
-const CHART_BOTTOM = Math.max(sp(12), Math.round(H * 0.028))
+const CHART_BOTTOM = ROUND
+  ? Math.round(H * 0.11)
+  : Math.max(sp(12), Math.round(H * 0.028))
 
 const STATUS_CY = TOP_PAD + Math.round(STATUS_H / 2)
-const DOT_R = sp(8)
-const DOT_HALO_R = sp(12)
-
-const topInset = cornerInset(TOP_PAD + sp(10))
-const clockLeft = topInset + sp(8)
-const clockRight = Math.round(W / 2) - DOT_HALO_R - sp(8)
+const CLOCK_SIZE = STATUS_FIT.size
+const STATUS_HALF = Math.round(CLOCK_SIZE * 0.36)
+const topInset = rowInset(STATUS_CY - STATUS_HALF, STATUS_CY + STATUS_HALF)
+const clockLeft = topInset + EDGE_PAD
+const clockRight = Math.round(W / 2) - DOT_HALO_R - CLOCK_GAP
 
 export const CLOCK = {
   x: clockLeft,
@@ -107,8 +166,8 @@ export const CLOCK = {
   w: Math.max(sp(80), clockRight - clockLeft),
   h: STATUS_H,
   color: COLORS.text,
-  text_size: sp(36),
-  align_h: align.RIGHT,
+  text_size: CLOCK_SIZE,
+  align_h: align.LEFT,
   align_v: align.CENTER_V,
   text: '--:--'
 }
@@ -194,7 +253,8 @@ export const BATTERY_PCT = {
 
 // 2. Hero Row: Gear button on left, Glucose centered on watch axis, Trend on right
 const SIDE_SLOT = sp(72)
-const HERO_PAD_X = sp(16)
+// Side padding of the hero row: clear of the screen edge across its height.
+const HERO_PAD_X = Math.max(sp(16), rowInset(HERO_Y, HERO_Y + HERO_H) + EDGE_PAD)
 const HERO_CY = HERO_Y + Math.round(HERO_H / 2)
 
 const GEAR_ICON_SIZE = sp(54)
@@ -280,13 +340,23 @@ export const DELTA = {
 }
 
 // 4. Glucose Chart Card in lower half
-const CHART_MARGIN_X = sp(12)
+const CHART_RADIUS = sp(20)
+const CHART_H = Math.max(sp(120), H - CHART_Y - CHART_BOTTOM)
+// Round screens: keep the card inside the circle. The card's own rounded
+// corners sit inside the edge, so test half a radius in. The Bip Max card
+// already follows its screen corners with its radius.
+const CHART_MARGIN_X = ROUND
+  ? Math.max(
+      sp(12),
+      rowInset(CHART_Y + CHART_RADIUS / 2, CHART_Y + CHART_H - CHART_RADIUS / 2) + sp(4)
+    )
+  : sp(12)
 export const CHART = {
   x: CHART_MARGIN_X,
   y: CHART_Y,
   w: W - CHART_MARGIN_X * 2,
-  h: Math.max(sp(120), H - CHART_Y - CHART_BOTTOM),
-  radius: sp(20)
+  h: CHART_H,
+  radius: CHART_RADIUS
 }
 
 export const CHART_PAD_T = sp(8)

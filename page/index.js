@@ -62,6 +62,7 @@ import {
 import {
   TITLE as SETTINGS_TITLE,
   buildMenuItems,
+  nearbyItems,
   menuListProps,
   TF_TITLE,
   TF_CHIPS,
@@ -150,6 +151,8 @@ import {
 import { every, cancelEvery } from '../shared/defer'
 import { parseScanJson, scanFingerprint, scanFingerprintFromText } from '../shared/sensor-config'
 import { flushTrace, readTraceTail, resetTraceSession, trace } from '../shared/trace'
+import { pullScanOverBle } from '../shared/phone-link'
+import { crc32, utf8Bytes } from '../shared/crypto'
 
 function fmtMmol(mmol) {
   if (!mmol) return '—'
@@ -165,6 +168,24 @@ function fmtAge(minutes) {
 }
 
 const HANDSHAKE_AWAKE_MS = 10000
+/** A sync older than this is treated as stuck and may be restarted. */
+const SYNC_STALE_S = 90
+/** How long the last sync result stays as the menu subtitle. */
+const SYNC_STATE_KEEP_MS = 2 * 60 * 1000
+/** Bluetooth (max ~45 s) plus part of the Zepp fallback. */
+const SYNC_WATCHDOG_MS = 70000
+/** pullScanOverBle error codes, as watch toasts. */
+const BLE_SYNC_ERROR_TEXT = {
+  'ble-off': 'Bluetooth unavailable',
+  'not-found': 'Phone not visible. Open Libre2 Key',
+  connect: 'Could not connect to phone',
+  transfer: 'Transfer from phone failed',
+  crc: 'Transfer damaged, try again'
+}
+/** GET_SCAN_JSON error codes from app-side, as watch toasts. */
+const SYNC_ERROR_TEXT = {
+  'no-scan': 'No scan in Zepp · paste JSON first'
+}
 const UI_ALIVE_MS = 60 * 1000
 const SVC_ALIVE_TRACE_MS = 5 * 60 * 1000
 const SVC_ALIVE_MS = 5 * 60 * 1000
@@ -642,7 +663,8 @@ Page(
       this.updateClock()
       this.updateStatusDot()
       this.refreshGlance()
-      if (getSessionWanted() && !this.pageClient) this.resumeSession()
+      // Not while Sync has the sensor link parked for the phone hand-off.
+      if (getSessionWanted() && !this.pageClient && !this.syncing) this.resumeSession()
     },
 
     onPause() {
@@ -656,6 +678,14 @@ Page(
     },
 
     onDestroy() {
+      if (this.syncWatchdog) {
+        clearTimeout(this.syncWatchdog)
+        this.syncWatchdog = null
+      }
+      if (this.syncRefreshTimer) {
+        clearTimeout(this.syncRefreshTimer)
+        this.syncRefreshTimer = null
+      }
       try {
         if (this.battery && this.onBatteryChange) this.battery.offChange(this.onBatteryChange)
       } catch (e) {}
@@ -716,7 +746,8 @@ Page(
       if (!this.request) return
       if (getSessionWanted()) return
       this.request({ method: 'GET_SCAN_JSON' })
-        .then(({ json }) => {
+        .then((reply) => {
+          const json = reply && reply.json
           if (json) this.applyIncomingJson(json, true)
         })
         .catch(() => {})
@@ -822,17 +853,25 @@ Page(
       const alarms = getAlarms()
       const fit = getCalFit()
       return buildMenuItems({
-        syncSub: serial ? serial : 'Bluetooth / Zepp',
+        syncSub:
+          this.syncState && (this.syncing || Date.now() - (this.syncStateAt || 0) < SYNC_STATE_KEEP_MS)
+            ? this.syncState
+            : serial
+              ? serial
+              : 'Bluetooth from Libre2 Key',
         rangeSub: winH + ' hours',
         alarmsSub: fmtMmol(alarms.low.mmol) + ' – ' + fmtMmol(alarms.high.mmol) + ' mmol/L',
         calSub: fit && fit.n > 0 ? 'Active · n=' + fit.n : 'Blood glucose ref',
-        infoSub: serial ? serial + ' · #' + getUnlockCount() : 'Sensor & status'
+        infoSub: serial ? serial + ' · #' + getUnlockCount() : 'Sensor & status',
+        nearbySub: this.lastSyncStats
+          ? this.lastSyncStats.adverts + ' seen by the last sync'
+          : 'Seen by the last sync'
       })
     },
 
     showSettingsMenu() {
       if (!this.settingsOpen || this.menuListW) return
-      if (this.tfOpen || this.alarmOpen || this.infoOpen || this.calOpen) return
+      if (this.tfOpen || this.alarmOpen || this.infoOpen || this.calOpen || this.nearbyOpen) return
       try {
         const w = createWidget(
           widget.SCROLL_LIST,
@@ -843,14 +882,76 @@ Page(
       } catch (e) {}
     },
 
+    /** Show sync progress as the "Sync from phone" subtitle. */
+    setSyncState(text) {
+      this.syncState = text || ''
+      this.syncStateAt = Date.now()
+      this.refreshSyncItem()
+    },
+
+    refreshSyncItem() {
+      if (this.syncRefreshTimer) return
+      const wait = Math.max(0, 1000 - (Date.now() - (this.syncRefreshAt || 0)))
+      // Never rebuild the list inside its own click callback.
+      this.syncRefreshTimer = setTimeout(() => {
+        this.syncRefreshTimer = null
+        this.syncRefreshAt = Date.now()
+        if (!this.settingsOpen || !this.menuListW) return
+        try {
+          this.hideSettingsMenu()
+          this.showSettingsMenu()
+        } catch (e) {}
+      }, Math.max(50, wait))
+    },
+
     onMenuClick(index) {
-      if (index === 0) this.syncFromScanner()
+      if (index === 0) {
+        try {
+          trace('menu sync tap')
+        } catch (e) {}
+        this.syncFromScanner()
+      }
       else if (index === 1) this.openTimeframe()
       else if (index === 2) this.openAlarms()
       else if (index === 3) this.openCalibrate()
       else if (index === 4) this.openInfo()
       else if (index === 5) this.sendLog()
-      else if (index === 6) this.closeSettings()
+      else if (index === 6) this.openNearby()
+      else if (index === 7) this.closeSettings()
+    },
+
+    /** Devices the last sync saw, for diagnosing "Not found" without a log. */
+    openNearby() {
+      if (this.nearbyOpen) return
+      this.hideSettingsMenu()
+      this.nearbyOpen = true
+      try {
+        const sample = (this.lastSyncStats && this.lastSyncStats.sample) || []
+        this.nearbyW = createWidget(
+          widget.SCROLL_LIST,
+          menuListProps((list, index) => this.closeNearby(), nearbyItems(sample))
+        )
+        if (this.nearbyW && this.overlayW) this.overlayW.push(this.nearbyW)
+      } catch (e) {
+        this.nearbyOpen = false
+        this.showSettingsMenu()
+      }
+    },
+
+    closeNearby() {
+      if (!this.nearbyOpen) return
+      this.nearbyOpen = false
+      const w = this.nearbyW
+      this.nearbyW = null
+      if (w) {
+        const list = this.overlayW || []
+        const idx = list.indexOf(w)
+        if (idx >= 0) list.splice(idx, 1)
+        try {
+          deleteWidget(w)
+        } catch (e) {}
+      }
+      this.showSettingsMenu()
     },
 
     openAlarms() {
@@ -1415,8 +1516,8 @@ Page(
             showToast({
               text: changed
                 ? 'Calibration updated'
-                : 'Phone still code ' +
-                  watch.unlockCode +
+                : 'Up to date · ' +
+                  (watch.serial || 'sensor') +
                   ' · patch ' +
                   watch.patchInfoHex
             })
@@ -1426,8 +1527,8 @@ Page(
         const sensor = applyCompanionScanJson(text)
         showToast({
           text:
-            'Got code ' +
-            sensor.unlockCode +
+            'Got ' +
+            (sensor.serial || 'sensor') +
             ' · patch ' +
             sensor.patchInfoHex +
             (source ? ' · ' + source : '')
@@ -1448,7 +1549,7 @@ Page(
           if (json) {
             this.applySettingsIncoming(
               json,
-              reply.source === 'scanner' ? 'Pixel' : 'Zepp',
+              'Zepp',
               false
             )
           }
@@ -1471,7 +1572,7 @@ Page(
         giveUp()
         return
       }
-      this.request({ method: 'GET_SCAN_JSON', params: { refresh: true } })
+      this.request({ method: 'GET_SCAN_JSON' })
         .then((reply) => {
           const json = reply && reply.json ? String(reply.json).trim() : ''
           if (!json || json === getStoredScanText()) {
@@ -1491,34 +1592,179 @@ Page(
         .catch(() => giveUp())
     },
 
+    /**
+     * "Sync from phone": Bluetooth straight from Libre2 Key first, then the
+     * scan pasted in Zepp settings.
+     */
     syncFromScanner() {
+      const now = Date.now()
+      if (this.syncing) {
+        const age = Math.round((now - (this.syncStartedAt || now)) / 1000)
+        if (age < SYNC_STALE_S) {
+          trace('sync busy ' + age + 's')
+          showToast({ text: 'Sync running · ' + age + ' s' })
+          return
+        }
+        trace('sync stale reset ' + age + 's')
+        this.endSync()
+      }
+      this.syncing = true
+      this.syncStartedAt = now
+      this.bleEvidence = ''
+      showToast({ text: 'Looking for phone…' })
+      this.setSyncState('Looking for phone…')
+      this.syncResume = getSessionWanted() || !!this.pageClient
+      this.syncWatchdog = setTimeout(() => {
+        this.syncWatchdog = null
+        if (!this.syncing) return
+        trace('sync watchdog')
+        showToast({ text: 'Sync timed out' })
+        this.setSyncState('Failed: timed out')
+        this.endSync()
+        this.restartAfterSync()
+      }, SYNC_WATCHDOG_MS)
+      // Let the toast and menu draw before the radio is reconfigured.
+      setTimeout(() => this.runBluetoothSync(), 300)
+    },
+
+    /** Clear the in-progress flag and its watchdog. */
+    endSync() {
+      this.syncing = false
+      if (this.syncWatchdog) {
+        clearTimeout(this.syncWatchdog)
+        this.syncWatchdog = null
+      }
+      try {
+        flushTrace()
+      } catch (e) {}
+    },
+
+    /** Bring the sensor link back after the phone hand-off. */
+    restartAfterSync() {
+      if (!this.syncResume || this.pageClient) return
+      try {
+        trace('sync restart')
+        this.startPageClient()
+      } catch (e) {
+        trace('sync restart threw ' + ((e && e.message) || ''))
+      }
+    },
+
+    runBluetoothSync() {
+      if (!this.syncing) return
+      const failed = (e) => {
+        const msg = (e && e.message) || String(e || 'error')
+        trace('sync threw ' + msg)
+        showToast({ text: 'Sync error: ' + msg })
+        this.setSyncState('Failed: ' + msg)
+        this.endSync()
+        this.restartAfterSync()
+      }
+      try {
+        // One GATT client at a time: park the sensor link for the hand-off.
+        try {
+          if (this.pageClient && this.pageClient.park) this.pageClient.park()
+        } catch (e) {
+          trace('sync park threw ' + ((e && e.message) || ''))
+        }
+        this.pageClient = null
+        clearHeldClient()
+        trace('sync ble start resume=' + (this.syncResume ? 1 : 0))
+        let storedCrc = null
+        try {
+          const stored = getStoredScanText()
+          if (stored) storedCrc = crc32(utf8Bytes(stored))
+        } catch (e) {}
+        const started = Date.now()
+        pullScanOverBle({
+          storedCrc,
+          onStatus: (text) => {
+            const sec = Math.round((Date.now() - started) / 1000)
+            this.setSyncState(text + (sec >= 2 ? ' ' + sec + ' s' : ''))
+          }
+        })
+          .then((result) => {
+            if (!this.syncing) return
+            this.lastSyncStats = result.stats || null
+            if (result.json) {
+              trace('sync done ble')
+              this.applySettingsIncoming(result.json, 'Bluetooth', true)
+              let serial = ''
+              try {
+                serial = String(JSON.parse(result.json).serial || '')
+              } catch (e) {}
+              this.setSyncState('Got ' + (serial || 'sensor') + ' · Bluetooth')
+              this.endSync()
+              this.restartAfterSync()
+              return
+            }
+            if (result.upToDate) {
+              trace('sync done up-to-date')
+              const watch = getSensor()
+              showToast({ text: 'Up to date · ' + (watch.serial || 'sensor') + ' · Bluetooth' })
+              this.setSyncState('Up to date · Bluetooth')
+              this.endSync()
+              this.restartAfterSync()
+              return
+            }
+            const text = BLE_SYNC_ERROR_TEXT[result.error] || 'Bluetooth sync failed'
+            const st = result.stats || {}
+            const evidence =
+              result.error === 'not-found'
+                ? 'Not found · ' +
+                  (st.adverts || 0) + ' adv · svc ' + (st.withService || 0) + ' · vnd ' + (st.withVendor || 0)
+                : 'Failed: ' + text + (result.detail ? ' (' + result.detail + ')' : '')
+            trace(
+              'sync ble fail ' + result.error + ' ' + (result.detail || '') +
+                ' adv=' + (st.adverts || 0) + ' svc=' + (st.withService || 0) + ' vnd=' + (st.withVendor || 0) +
+                (st.sample && st.sample.length ? ' [' + st.sample.map((d) => d.text).join(', ') + ']' : '')
+            )
+            showToast({ text })
+            this.bleEvidence = evidence
+            this.setSyncState(evidence)
+            this.restartAfterSync()
+            this.syncViaZepp()
+          })
+          .catch(failed)
+      } catch (e) {
+        failed(e)
+      }
+    },
+
+    /** Fallback: the scan pasted in Zepp settings, via the Zepp side service. */
+    syncViaZepp() {
       if (!this.request) {
-        showToast({ text: 'Phone not connected' })
+        trace('sync zepp unavailable')
+        showToast({ text: 'Phone not found · Zepp not connected' })
+        this.setSyncState((this.bleEvidence || 'Failed: phone not found') + ' · Zepp offline')
+        this.endSync()
         return
       }
-      const rejected = !!(
-        this.pageClient &&
-        this.pageClient.isUnlockRejected &&
-        this.pageClient.isUnlockRejected()
-      )
-      this.request({
-        method: 'GET_SCAN_JSON',
-        params: { settingsOnly: getSessionWanted(), refresh: rejected }
-      })
+      this.request({ method: 'GET_SCAN_JSON' })
         .then((reply) => {
+          if (!this.syncing) return
           const json = reply && reply.json
+          const error = (reply && reply.error) || ''
           if (!json) {
-            showToast({ text: 'Save paste in Zepp Settings first' })
+            trace('sync failed err=' + (error || '?') + ' ' + ((reply && reply.detail) || ''))
+            const text = SYNC_ERROR_TEXT[error] || 'Sync failed'
+            showToast({ text })
+            this.setSyncState('Failed: ' + text)
+            this.endSync()
             return
           }
-          this.applySettingsIncoming(
-            json,
-            reply.source === 'scanner' ? 'Pixel' : 'Zepp',
-            true
-          )
+          trace('sync done zepp')
+          this.applySettingsIncoming(json, 'Zepp', true)
+          this.setSyncState('Used scan pasted in Zepp')
+          this.endSync()
         })
-        .catch(() => {
+        .catch((e) => {
+          if (!this.syncing) return
+          trace('sync zepp threw ' + ((e && e.message) || ''))
           showToast({ text: 'Sync failed' })
+          // Keep the Bluetooth evidence in view; the Zepp fallback failing is secondary.
+          this.setSyncState((this.bleEvidence || 'Failed') + ' · Zepp offline')
+          this.endSync()
         })
     },
 

@@ -1,4 +1,5 @@
-import { hexToBytes, bytesToHex, streamingUnlockPayload, factoryGlucose } from './crypto.js'
+import { hexToBytes, bytesToHex, streamingUnlockPayload, factoryGlucose, crc32, utf8Bytes, utf8Text } from './crypto.js'
+import { parsePhoneAdvert, parsePhoneServiceData, matchPhoneAdvert, uuidTail, createFrameAssembler, frameBytes, advertName, isPhoneName } from './phone-frames.js'
 import { parseScanJson } from './sensor-config.js'
 import { fitCalPoints, applyCalFit, freshCalPoints, CAL_MAX_AGE_MS } from './cal-fit.js'
 
@@ -75,7 +76,7 @@ if (
   scan.patchInfoHex !== '7F0E31017C0C' ||
   scan.bleAddress !== 'f8:05:84:00:00:01' ||
   scan.unlockCode !== 42 ||
-  scan.payloads[1] !== '2B0000001725B78CB287171F'
+  'payloads' in scan
 ) {
   console.error('parseScanJson mismatch', scan)
   failed++
@@ -360,5 +361,88 @@ if (emptyImport.points.length !== 0) {
 } else {
   console.log('user cal empty import: OK')
 }
+
+
+function check(name, ok, info) {
+  if (ok) console.log(name + ': OK')
+  else {
+    console.error(name + ' FAILED', info === undefined ? '' : info)
+    failed++
+  }
+}
+
+// Same vector as BleFramingTest.kt on the phone.
+check('crc32 check value', crc32(utf8Bytes('123456789')) === 0xcbf43926, crc32(utf8Bytes('123456789')).toString(16))
+check('utf8 round trip', utf8Text(utf8Bytes('3MH · µ €')) === '3MH · µ €')
+
+const bleJson = JSON.stringify({
+  serial: '3MH000TEST0',
+  uid: '73382A0D78007AE0',
+  patchInfo: '7F0E31017C0C',
+  bleAddress: 'F8:05:84:00:00:01',
+  unlockCode: '42',
+  nextUnlockCount: '1',
+  calibration: { i1: '1', i2: '8', i3: '0', i4: '6000', i5: '320', i6: '5000' }
+})
+const bleBytes = utf8Bytes(bleJson)
+// Frames exactly as ScanFrames.frames() builds them: [seq][total][18 bytes].
+const frames = []
+const totalFrames = Math.ceil(bleBytes.length / 18)
+for (let i = 0; i < totalFrames; i++) {
+  const part = bleBytes.slice(i * 18, i * 18 + 18)
+  const f = new Uint8Array(part.length + 2)
+  f[0] = i
+  f[1] = totalFrames
+  f.set(part, 2)
+  frames.push(f)
+}
+check('frames fit 20 bytes', frames.every((f) => f.length <= 20))
+
+const asm = createFrameAssembler()
+let out = null
+const order = frames.slice().reverse().concat([frames[0], frames[1]])
+order.forEach((f) => {
+  const r = asm.add(frameBytes(f.buffer, f.length))
+  if (r) out = r
+})
+check('reassembly reorder + duplicates', out && utf8Text(out) === bleJson)
+check('reassembled crc', out && crc32(out) === crc32(bleBytes))
+
+const partial = createFrameAssembler()
+let early = null
+frames.slice(1).forEach((f) => {
+  early = partial.add(f) || early
+})
+check('reassembly waits for missing frame', early === null && partial.received() === frames.length - 1)
+
+const crcLe = crc32(bleBytes)
+const crcHex = [0, 8, 16, 24].map((sh) => ((crcLe >>> sh) & 0xff).toString(16).padStart(2, '0')).join('')
+const withCompany = 'ffff' + '414d5a43474d01' + crcHex
+const adv = parsePhoneAdvert(withCompany)
+check('advert with company id', adv && adv.crc === crcLe, adv)
+check('advert without company id', parsePhoneAdvert('414D5A43474D01' + crcHex.toUpperCase()).crc === crcLe)
+check('advert other vendor ignored', parsePhoneAdvert('4c000215aabbcc') === null)
+check('frameBytes hex string', frameBytes('0102ff', 3).length === 3)
+
+const svcHex = '01' + crcHex
+check('service data parse', parsePhoneServiceData(svcHex).crc === crcLe)
+check('service data wrong version', parsePhoneServiceData('02' + crcHex) === null)
+check('uuidTail forms', uuidTail(0xac10) === 'AC10' && uuidTail('0000ac10-0000-1000-8000-00805f9b34fb') === 'AC10' && uuidTail('AC10') === 'AC10' && uuidTail('0000AC10') === 'AC10')
+const viaSd = matchPhoneAdvert({ dev_addr: 'aa', service_data_array: [{ uuid: 'AC10', service_data: svcHex }] })
+check('match via service data', viaSd && viaSd.via === 'service-data' && viaSd.crc === crcLe, viaSd)
+const viaUuid = matchPhoneAdvert({ dev_addr: 'aa', uuid: 'ac10', vendor_data: withCompany })
+check('match via uuid + vendor crc', viaUuid && viaUuid.via === 'uuid' && viaUuid.crc === crcLe, viaUuid)
+const viaList = matchPhoneAdvert({ dev_addr: 'aa', service_uuid_array: ['0000ac10-0000-1000-8000-00805f9b34fb'] })
+check('match via uuid list, crc unknown', viaList && viaList.via === 'uuid-list' && viaList.crc === null, viaList)
+const viaVendor = matchPhoneAdvert({ dev_addr: 'aa', vendor_data: withCompany })
+check('match via vendor only', viaVendor && viaVendor.via === 'vendor' && viaVendor.crc === crcLe, viaVendor)
+check('no match on sensor advert', matchPhoneAdvert({ dev_addr: 'aa', uuid: 'fde3', dev_name: 'ABBOTT3MH' }) === null)
+const viaName = matchPhoneAdvert({ dev_addr: 'aa', dev_name: 'AMZCGM' })
+check('match via name, crc unknown', viaName && viaName.via === 'name' && viaName.crc === null, viaName)
+const viaNameSd = matchPhoneAdvert({ dev_addr: 'aa', dev_name: 'amzcgm', service_data_array: [{ uuid: 'AC10', service_data: svcHex }] })
+check('match via name with service-data crc', viaNameSd && viaNameSd.via === 'name' && viaNameSd.crc === crcLe, viaNameSd)
+const nameBytes = new Uint8Array([65, 77, 90, 67, 71, 77, 0, 0]).buffer
+check('name as bytes', advertName({ dev_name: nameBytes }) === 'AMZCGM' && matchPhoneAdvert({ dev_addr: 'aa', dev_name: nameBytes }).via === 'name')
+check('isPhoneName rejects others', !isPhoneName('ABBOTT3MH') && !isPhoneName('') && isPhoneName('AMZCGM-x'))
 
 process.exit(failed ? 1 : 0)

@@ -3,7 +3,7 @@
 [![Latest release](https://img.shields.io/github/v/release/vstoianov/amazcgm)](https://github.com/vstoianov/amazcgm/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/vstoianov/amazcgm/total)](https://github.com/vstoianov/amazcgm/releases)
 
-**FreeStyle Libre 2+ (EU) glucose readings directly on the Amazfit Bip Max, over Bluetooth, with no phone in the loop.**
+**FreeStyle Libre 2+ (EU) glucose readings directly on your Amazfit watch, over Bluetooth, with no phone in the loop.**
 
 The watch connects to the sensor itself, unlocks the Bluetooth stream and shows a new reading every minute. Your phone can be off, at home or out of battery. You need a phone only once per sensor, to scan it with NFC.
 
@@ -25,19 +25,30 @@ The watch connects to the sensor itself, unlocks the Bluetooth stream and shows 
 
 ## Requirements
 
-| | Supported |
-|---|---|
-| Watch | Amazfit Bip Max (Zepp OS 4) |
-| Sensor | FreeStyle Libre 2 Plus, EU version |
-| Setup phone | Android phone with NFC, once per sensor |
+| Watch | Screen | Status |
+|---|---|---|
+| Amazfit Bip Max | 432×514 | Tested daily |
+| Amazfit T-Rex 3 | 480×480 round | Experimental: layout checked, sensor link not yet tested |
+| Amazfit T-Rex 3 Pro (48 mm / 44 mm) | 480×480 / 466×466 round | Experimental |
+| Amazfit Balance 2 / Balance 2 XT | 480×480 round | Experimental |
+| Amazfit Active Max | 480×480 round | Experimental |
 
-Other Libre models (Libre 2 US, Libre 3) and other watches are not supported.
+One release file covers all of these watches. The Zepp app installs the right version for your watch.
+
+You also need a **FreeStyle Libre 2 Plus sensor, EU version**, and an **Android phone with NFC** once per sensor for setup.
+
+Other Libre models (Libre 2 US, Libre 3) are not supported. If you run AmazCGM on one of the experimental watches, please report whether the sensor connects. Open an issue either way.
 
 ## How it works
 
-1. **Once per sensor:** scan the sensor with the [Libre2 Key](https://github.com/vstoianov/cgmnfc) Android app. It reads the sensor over NFC and produces a short scan JSON with the sensor's ID and Bluetooth unlock data.
-2. Paste that JSON in the Zepp app: **Profile → Amazfit Bip Max → App settings → AmazCGM → Set JSON**, then open AmazCGM on the watch and sync.
-3. **From then on, the watch works alone.** It finds the sensor's Bluetooth advert, logs in, sends the unlock command and decrypts each glucose packet on the watch.
+1. **Once per sensor:** scan the sensor with the [Libre2 Key](https://github.com/vstoianov/cgmnfc) Android app. It reads the sensor over NFC and shows its serial number and patch info.
+2. In Libre2 Key tap **Share JSON** and send it to the phone with the Zepp app. In Zepp open **Profile → your watch → App settings → AmazCGM** and tap **Paste JSON**.
+3. Open AmazCGM on the watch and tap **Sync from phone** in its menu. The watch shows the serial and patch it got.
+4. **From then on, the watch works alone.** It finds the sensor's Bluetooth advert, logs in, sends the unlock command and decrypts each glucose packet on the watch.
+
+**Direct Bluetooth (experimental).** After a scan, Libre2 Key is also visible to the watch over Bluetooth for 10 minutes, and **Sync from phone** tries that first, without the Zepp app. While visible, Libre2 Key names the phone `AMZCGM` in Bluetooth, the same way the sensor advertises `ABBOTT<serial>`; the phone's normal name comes back afterwards. During the attempt the watch pauses its sensor link for a few seconds. If it reports "Not found", **Nearby devices** in the AmazCGM menu lists what the scan saw, and the sync falls back to the scan pasted in Zepp.
+
+Zepp OS gives watch apps no network access, so there is no Wi‑Fi transfer.
 
 The Libre 2 unlock and decryption maths is ported from [DiaBLE](https://github.com/gui-dos/DiaBLE) and [LibreTools](https://github.com/ivalkou/LibreTools). See [NOTICE](NOTICE) for credits.
 
@@ -45,11 +56,11 @@ The Libre 2 unlock and decryption maths is ported from [DiaBLE](https://github.c
 
 ### From a release (recommended)
 
-You need the Zepp app on your phone, with the Bip Max paired to it, and a second screen (a computer or another phone) to show the QR code.
+You need the Zepp app on your phone, with your watch paired to it, and a second screen (a computer or another phone) to show the QR code.
 
 1. On the second screen, open the **[latest release](https://github.com/vstoianov/amazcgm/releases/latest)**.
 2. On your phone, turn on Zepp developer mode: in the Zepp app go to **Profile → Settings → About** and tap the Zepp logo 7 times.
-3. In the Zepp app go to **Profile → Amazfit Bip Max → Developer mode → Scan** and scan the QR code shown on the release page (`AmazCGM-x.y.z-install-qr.png`).
+3. In the Zepp app go to **Profile → your watch → Developer mode → Scan** and scan the QR code shown on the release page (`AmazCGM-x.y.z-install-qr.png`).
 4. Keep the watch close to the phone until the installation finishes. AmazCGM then appears in the watch's app list.
 
 **Updating:** repeat the same steps with the newer release.
@@ -74,7 +85,7 @@ Maintainers: see [RELEASING.md](RELEASING.md) for how to publish a release.
 <!-- TODO: add your measured battery life, for example "about N days with a reading every minute" -->
 
 - Bluetooth on the Bip Max sometimes gets stuck after many hours. AmazCGM detects this, rebuilds the connection and, if that fails, tells you to restart the watch.
-- When the sensor ends (after 15 days) or is replaced, scan the new one with Libre2 Key and paste the new JSON.
+- When the sensor ends (after 15 days) or is replaced, scan the new one with Libre2 Key, paste the new JSON in Zepp and tap **Sync from phone** on the watch.
 - Readings stop while the watch is out of Bluetooth range of the sensor, which is usually a few metres.
 
 ## Reporting a problem
@@ -82,7 +93,7 @@ Maintainers: see [RELEASING.md](RELEASING.md) for how to publish a release.
 Open an [issue](https://github.com/vstoianov/amazcgm/issues) and include:
 
 - what happened and at what time,
-- the app version, for example `v1.6.4` (the release you installed, also shown in the Zepp app under the watch's installed apps),
+- the app version, for example `v1.8.3` (the release you installed, also shown in the Zepp app under the watch's installed apps),
 - the debug log: in the Zepp app go to AmazCGM settings, tap **Copy log** and paste it into the issue.
 
 The log contains your sensor's Bluetooth address. Remove it if you prefer.
