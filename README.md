@@ -91,7 +91,7 @@ You need the Zepp app on your phone, with your watch paired to it, and a second 
 
 1. On the second screen, open the **[latest release](https://github.com/vstoianov/amazcgm/releases/latest)**.
 2. On your phone, turn on Zepp developer mode: in the Zepp app go to **Profile → Settings → About** and tap the Zepp logo 7 times.
-3. In the Zepp app go to **Profile → your watch → Developer mode → Scan** and scan the QR code shown on the release page (`AmazCGM-x.y.z-install-qr.png`).
+3. In the Zepp app go to **Profile → your watch → Developer mode → Scan** and scan the QR code for your watch on the release page. There is one for the Bip Max, one for the T-Rex 3 Pro 44 mm, and one for the other round watches.
 4. Keep the watch close to the phone until the installation finishes. AmazCGM then appears in the watch's app list.
 
 **Updating:** repeat the same steps with the newer release.
