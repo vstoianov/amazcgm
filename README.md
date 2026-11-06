@@ -46,7 +46,7 @@ Other Libre models (Libre 2 US, Libre 3) are not supported. If you run AmazCGM o
 3. Open AmazCGM on the watch and tap **Sync from phone** in its menu. The watch shows the serial and patch it got.
 4. **From then on, the watch works alone.** It finds the sensor's Bluetooth advert, logs in, sends the unlock command and decrypts each glucose packet on the watch.
 
-**Direct Bluetooth (experimental).** After a scan, Libre2 Key is also visible to the watch over Bluetooth for 10 minutes, and **Sync from phone** tries that first, without the Zepp app. While visible, Libre2 Key names the phone `AMZCGM` in Bluetooth, the same way the sensor advertises `ABBOTT<serial>`; the phone's normal name comes back afterwards. During the attempt the watch pauses its sensor link for a few seconds. If it reports "Not found", **Nearby devices** in the AmazCGM menu lists what the scan saw, and the sync falls back to the scan pasted in Zepp.
+**Direct Bluetooth.** After a scan, Libre2 Key is also visible to the watch over Bluetooth for 10 minutes, and **Sync from phone** tries that first, without the Zepp app. While visible, Libre2 Key names the phone `AMZCGM` in Bluetooth, the same way the sensor advertises `ABBOTT<serial>`; the phone's normal name comes back afterwards. During the attempt the watch pauses its sensor link for a few seconds. If it reports "Not found", **Nearby devices** in the AmazCGM menu lists what the scan saw, and the sync falls back to the scan pasted in Zepp.
 
 Zepp OS gives watch apps no network access, so there is no Wi‑Fi transfer.
 
