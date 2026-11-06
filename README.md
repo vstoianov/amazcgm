@@ -1,5 +1,8 @@
 # AmazCGM
 
+[![Latest release](https://img.shields.io/github/v/release/vstoianov/amazcgm)](https://github.com/vstoianov/amazcgm/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/vstoianov/amazcgm/total)](https://github.com/vstoianov/amazcgm/releases)
+
 **FreeStyle Libre 2+ (EU) glucose readings directly on the Amazfit Bip Max, over Bluetooth, with no phone in the loop.**
 
 The watch connects to the sensor itself, unlocks the Bluetooth stream and shows a new reading every minute. Your phone can be off, at home or out of battery. You need a phone only once per sensor, to scan it with NFC.
@@ -40,10 +43,18 @@ The Libre 2 unlock and decryption maths is ported from [DiaBLE](https://github.c
 
 ## Install
 
-### From a release
+### From a release (recommended)
 
-1. Download the latest `.zab` file from [Releases](../../releases).
-2. Install it on the watch with the Zepp app in developer mode, or with `zeus preview` (see below).
+You need the Zepp app on your phone, with the Bip Max paired to it, and a second screen (a computer or another phone) to show the QR code.
+
+1. On the second screen, open the **[latest release](https://github.com/vstoianov/amazcgm/releases/latest)**.
+2. On your phone, turn on Zepp developer mode: in the Zepp app go to **Profile → Settings → About** and tap the Zepp logo 7 times.
+3. In the Zepp app go to **Profile → Amazfit Bip Max → Developer mode → Scan** and scan the QR code shown on the release page (`AmazCGM-x.y.z-install-qr.png`).
+4. Keep the watch close to the phone until the installation finishes. AmazCGM then appears in the watch's app list.
+
+**Updating:** repeat the same steps with the newer release.
+
+**Advanced:** each release also has the `.zab` file and a `.sha256` checksum. You can check the file with `sha256sum -c AmazCGM-x.y.z.zab.sha256` and install it with the Zeus CLI.
 
 ### Build from source
 
@@ -56,6 +67,8 @@ npx zeus preview    # builds and shows a QR code to install through the Zepp app
 npm test            # unlock and calibration unit tests
 ```
 
+Maintainers: see [RELEASING.md](RELEASING.md) for how to publish a release.
+
 ## Battery and known limits
 
 <!-- TODO: add your measured battery life, for example "about N days with a reading every minute" -->
@@ -66,10 +79,10 @@ npm test            # unlock and calibration unit tests
 
 ## Reporting a problem
 
-Open an [issue](../../issues) and include:
+Open an [issue](https://github.com/vstoianov/amazcgm/issues) and include:
 
 - what happened and at what time,
-- the app version (shown in the Zepp app under the watch's installed apps, or the release you installed),
+- the app version, for example `v1.6.4` (the release you installed, also shown in the Zepp app under the watch's installed apps),
 - the debug log: in the Zepp app go to AmazCGM settings, tap **Copy log** and paste it into the issue.
 
 The log contains your sensor's Bluetooth address. Remove it if you prefer.
