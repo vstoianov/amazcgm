@@ -19,10 +19,22 @@ Releases are built locally and published to GitHub Releases with `scripts/releas
 
 The script will:
 
-- check that the versions match, the tag is new and the tree is clean,
+- check that the repo is public, the versions match, the tag is new and the tree is clean,
 - run `npm test` and `npx zeus build`,
-- write `release/AmazCGM-<ver>.zab`, its `.sha256`, and `AmazCGM-<ver>-install-qr.png`. The QR code points to `zpkd1://github.com/<repo>/releases/download/v<ver>/AmazCGM-<ver>.zab` for the Zepp app's developer-mode scanner,
-- create and push the tag `v<ver>`, and publish the GitHub Release with those three files.
+- write `release/AmazCGM-<ver>.zab` and its `.sha256`,
+- split the `.zab` with `scripts/make-zpk.py` into one `.zpk` per watch group (`bip-max`, `t-rex-3-pro-44`, `round-480`) in `release/zpk/`,
+- push those `.zpk` files to the `packages` branch and make one `AmazCGM-<ver>-<group>-install-qr.png` per group. Each QR code points to `zpkd1://raw.githubusercontent.com/<repo>/packages/AmazCGM-<ver>-<group>.zpk` for the Zepp app's developer-mode scanner,
+- create and push the tag `v<ver>`, and publish the GitHub Release with the `.zab`, the `.sha256` and the QR codes.
+
+## How QR installs work
+
+The Zepp app's developer-mode scanner downloads the file behind a `zpkd1://` link, which is the HTTPS address with `https://` swapped for `zpkd1://`. It has three requirements, each learned from a failed install:
+
+- **No redirect.** GitHub release asset links redirect to a signed address, and Zepp reports "Download failed, error code: null". `raw.githubusercontent.com` serves files from a branch directly, so the packages live on the orphan branch `packages`, which shares no history with `main`.
+- **One `.zpk` per watch, not the `.zab`.** A `.zab` gives "Parse mini program package failed".
+- **Preview mode.** `make-zpk.py` sets `packageInfo.mode` to `preview` and `packageInfo.expiredTime` far in the future in the `app.json` of `device.zip` and `app-side.zip`. Nothing else in the package changes.
+
+The repo must stay public, because Zepp downloads without a GitHub login. Do not delete the `packages` branch or its files, because older release QR codes point to them.
 
 ## After publishing
 
