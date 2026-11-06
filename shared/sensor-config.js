@@ -60,16 +60,6 @@ export function parseScanJson(text) {
   if (!/^([0-9a-f]{2}:){5}[0-9a-f]{2}$/.test(bleAddress)) {
     throw new Error('bleAddress must look like AA:BB:CC:DD:EE:FF')
   }
-  const payloads = {}
-  if (Array.isArray(data.unlockPayloads)) {
-    data.unlockPayloads.forEach((item) => {
-      const count = Number(item && item.unlockCount)
-      const hex = String((item && item.payload) || '')
-        .replace(/[^0-9a-fA-F]/g, '')
-        .toUpperCase()
-      if (count >= 1 && hex.length === 24) payloads[count] = hex
-    })
-  }
   return {
     serial: String(data.serial || ''),
     bleAddress,
@@ -82,7 +72,6 @@ export function parseScanJson(text) {
     service: String(data.bleService || 'FDE3'),
     writeChar: String(data.bleWriteCharacteristic || 'F001'),
     notifyChar: String(data.bleNotifyCharacteristic || 'F002'),
-    payloads,
     calibration: parseCalibration(data)
   }
 }

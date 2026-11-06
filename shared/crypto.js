@@ -325,3 +325,76 @@ export function parseTrend(plain, cal) {
   }
   return out
 }
+
+let CRC32_TABLE = null
+
+/** Standard CRC-32 (IEEE, as java.util.zip.CRC32). Returns an unsigned number. */
+export function crc32(bytes) {
+  if (!CRC32_TABLE) {
+    CRC32_TABLE = new Uint32Array(256)
+    for (let n = 0; n < 256; n++) {
+      let c = n
+      for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1
+      CRC32_TABLE[n] = c >>> 0
+    }
+  }
+  let crc = 0xffffffff
+  for (let i = 0; i < bytes.length; i++) {
+    crc = CRC32_TABLE[(crc ^ bytes[i]) & 0xff] ^ (crc >>> 8)
+  }
+  return (crc ^ 0xffffffff) >>> 0
+}
+
+/** Bytes of a string; non-ASCII characters are encoded as UTF-8. */
+export function utf8Bytes(text) {
+  const s = String(text == null ? '' : text)
+  const out = []
+  for (let i = 0; i < s.length; i++) {
+    let c = s.charCodeAt(i)
+    if (c >= 0xd800 && c <= 0xdbff && i + 1 < s.length) {
+      const d = s.charCodeAt(i + 1)
+      if (d >= 0xdc00 && d <= 0xdfff) {
+        c = 0x10000 + ((c - 0xd800) << 10) + (d - 0xdc00)
+        i++
+      }
+    }
+    if (c < 0x80) out.push(c)
+    else if (c < 0x800) out.push(0xc0 | (c >> 6), 0x80 | (c & 0x3f))
+    else if (c < 0x10000) out.push(0xe0 | (c >> 12), 0x80 | ((c >> 6) & 0x3f), 0x80 | (c & 0x3f))
+    else {
+      out.push(
+        0xf0 | (c >> 18),
+        0x80 | ((c >> 12) & 0x3f),
+        0x80 | ((c >> 6) & 0x3f),
+        0x80 | (c & 0x3f)
+      )
+    }
+  }
+  return new Uint8Array(out)
+}
+
+/** Decode UTF-8 bytes (no TextDecoder on the watch). */
+export function utf8Text(bytes) {
+  let s = ''
+  for (let i = 0; i < bytes.length; ) {
+    const b = bytes[i++]
+    let c
+    if (b < 0x80) c = b
+    else if (b < 0xe0) c = ((b & 0x1f) << 6) | (bytes[i++] & 0x3f)
+    else if (b < 0xf0) c = ((b & 0x0f) << 12) | ((bytes[i++] & 0x3f) << 6) | (bytes[i++] & 0x3f)
+    else {
+      c =
+        ((b & 0x07) << 18) |
+        ((bytes[i++] & 0x3f) << 12) |
+        ((bytes[i++] & 0x3f) << 6) |
+        (bytes[i++] & 0x3f)
+    }
+    if (c > 0xffff) {
+      c -= 0x10000
+      s += String.fromCharCode(0xd800 + (c >> 10), 0xdc00 + (c & 0x3ff))
+    } else {
+      s += String.fromCharCode(c)
+    }
+  }
+  return s
+}

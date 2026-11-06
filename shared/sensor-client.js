@@ -262,8 +262,8 @@ function isSensorAdvertisement(device, sensor) {
 }
 
 function unlockBytes(sensor, count) {
-  // Always derive from the stored unlock code (JSON enableTime). Cached
-  // unlockPayloads can be leftover from an older code after a companion paste.
+  // Always derive from uid + patchInfo + the stored unlock code. The scan
+  // JSON carries no precomputed payloads.
   return streamingUnlockPayload(
     hexToBytes(sensor.uidHex),
     hexToBytes(sensor.patchInfoHex),

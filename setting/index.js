@@ -54,20 +54,47 @@ AppSettingsPage({
       const data = typeof val === 'string' ? JSON.parse(val) : val
       const code = this.unlockCodeOf(val)
       const count = this.fieldOf(val, 'nextUnlockCount')
-      return (
-        'Unlock code: ' +
-        (code == null ? '?' : code) +
-        '\nNext count: ' +
-        (count == null ? '?' : count) +
-        '\nPatch: ' +
-        this.patchOf(val) +
-        '\n' +
-        (data.serial || '?') +
-        '  ' +
-        (data.bleAddress || '')
-      )
+      return {
+        serial: String((data && data.serial) || '?'),
+        patch: this.patchOf(val).replace(/(.{4})(?=.)/g, '$1 '),
+        detail:
+          'Unlock code ' +
+          (code == null ? '?' : code) +
+          ' · next count ' +
+          (count == null ? '?' : count)
+      }
     } catch (e) {
-      return 'Could not parse JSON'
+      return null
+    }
+  },
+
+  labelStyle() {
+    return {
+      display: 'block',
+      fontSize: '12px',
+      color: '#888',
+      textTransform: 'uppercase',
+      letterSpacing: '0.5px',
+      marginBottom: '2px'
+    }
+  },
+
+  titleStyle() {
+    return {
+      display: 'block',
+      fontSize: '17px',
+      fontWeight: 'bold',
+      marginBottom: '4px'
+    }
+  },
+
+  hintStyle() {
+    return {
+      display: 'block',
+      fontSize: '13px',
+      color: '#888',
+      marginBottom: '12px',
+      lineHeight: '18px'
     }
   },
 
@@ -242,51 +269,49 @@ AppSettingsPage({
       ? 'Ready to copy · ' + traceLines + ' lines'
       : 'No log yet'
     const validScan = this.looksLikeScan(stored)
-    const status = stored
-      ? validScan
-        ? this.summarize(stored)
-        : 'Stored text is not a Libre2 Key scan'
-      : 'No scan yet — paste JSON via Set JSON'
-    const jsonPreview = stored ? this.prettyJson(stored) : ''
-    const sensorChildren = [
-      Text(
-        {
-          style: {
-            display: 'block',
-            fontSize: '17px',
-            fontWeight: 'bold',
-            marginBottom: '4px'
-          }
-        },
-        ['Libre 2+ sensor']
-      ),
-      Text(
-        {
-          style: {
-            display: 'block',
-            fontSize: '13px',
-            color: '#888',
-            marginBottom: '12px',
-            lineHeight: '18px'
-          }
-        },
-        ['Paste a Libre2 Key scan, then sync from the watch.']
-      ),
-      Text(
-        {
-          style: {
-            display: 'block',
-            fontSize: '15px',
-            fontWeight: 'bold',
-            color: validScan ? '#1b6b7a' : '#888',
-            marginBottom: jsonPreview ? '10px' : '12px',
-            whiteSpace: 'pre-wrap',
-            lineHeight: '22px'
-          }
-        },
-        [status]
+    const summary = validScan ? this.summarize(stored) : null
+    const jsonOpen = String(storage.getItem('ui.jsonPreviewOpen') || '') === '1'
+    const jsonPreview = stored && jsonOpen ? this.prettyJson(stored) : ''
+    const sensorChildren = [Text({ style: this.titleStyle() }, ['Libre 2+ sensor'])]
+
+    if (summary) {
+      sensorChildren.push(
+        Text({ style: this.labelStyle() }, ['Serial']),
+        Text(
+          {
+            style: {
+              display: 'block',
+              fontSize: '22px',
+              fontWeight: 'bold',
+              color: '#1b6b7a',
+              marginBottom: '10px'
+            }
+          },
+          [summary.serial]
+        ),
+        Text({ style: this.labelStyle() }, ['Patch info']),
+        Text(
+          {
+            style: {
+              display: 'block',
+              fontSize: '17px',
+              fontFamily: 'monospace',
+              marginBottom: '8px'
+            }
+          },
+          [summary.patch]
+        ),
+        Text({ style: this.hintStyle() }, [summary.detail])
       )
-    ]
+    } else {
+      sensorChildren.push(
+        Text({ style: this.hintStyle() }, [
+          stored
+            ? 'Stored text is not a Libre2 Key scan'
+            : 'No sensor yet. In Libre2 Key tap Share JSON, then paste it here.'
+        ])
+      )
+    }
 
     if (jsonPreview) {
       sensorChildren.push(
@@ -345,11 +370,23 @@ AppSettingsPage({
     } else {
       sensorChildren.push(
         Button({
-          label: 'Set JSON',
+          label: 'Paste JSON',
           style: this.btnStyle('primary'),
           onClick: () => this.openJsonEditor(storage)
         })
       )
+      if (stored) {
+        sensorChildren.push(
+          Button({
+            label: jsonOpen ? 'Hide JSON' : 'Show JSON',
+            style: this.btnStyle('secondary'),
+            onClick: () => {
+              if (jsonOpen) storage.removeItem('ui.jsonPreviewOpen')
+              else storage.setItem('ui.jsonPreviewOpen', '1')
+            }
+          })
+        )
+      }
     }
 
     return View(

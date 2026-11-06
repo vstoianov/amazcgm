@@ -5,12 +5,12 @@
     "appName": "AmazCGM",
     "appType": "app",
     "version": {
-      "code": 191,
-      "name": "1.6.4"
+      "code": 197,
+      "name": "1.8.3"
     },
     "icon": "icon.png",
     "vender": "vstoianov",
-    "description": "AmazCGM: direct BLE connection to a Libre 2+ EU sensor on Amazfit Bip Max",
+    "description": "AmazCGM: direct BLE connection to a Libre 2+ EU sensor on Amazfit Bip Max, T-Rex 3 / 3 Pro, Balance 2 and Active Max",
     "_pikeCompatibled": 1
   },
   "permissions": [
@@ -33,10 +33,14 @@
     "bip-max": {
       "module": {
         "page": {
-          "pages": ["page/index"]
+          "pages": [
+            "page/index"
+          ]
         },
         "app-service": {
-          "services": ["app-service/sensor"]
+          "services": [
+            "app-service/sensor"
+          ]
         },
         "app-side": {
           "path": "app-side/index"
@@ -52,6 +56,125 @@
           "st": "s",
           "sr": "w432",
           "dw": 432
+        },
+        {
+          "name": "t-rex-3",
+          "deviceSource": 8716544,
+          "st": "r",
+          "sr": "w480",
+          "dw": 480
+        },
+        {
+          "name": "t-rex-3",
+          "deviceSource": 8716545,
+          "st": "r",
+          "sr": "w480",
+          "dw": 480
+        },
+        {
+          "name": "t-rex-3",
+          "deviceSource": 8716547,
+          "st": "r",
+          "sr": "w480",
+          "dw": 480
+        },
+        {
+          "name": "t-rex-3-pro-48",
+          "deviceSource": 10551552,
+          "st": "r",
+          "sr": "w480",
+          "dw": 480
+        },
+        {
+          "name": "t-rex-3-pro-48",
+          "deviceSource": 10551553,
+          "st": "r",
+          "sr": "w480",
+          "dw": 480
+        },
+        {
+          "name": "t-rex-3-pro-48",
+          "deviceSource": 10551555,
+          "st": "r",
+          "sr": "w480",
+          "dw": 480
+        },
+        {
+          "name": "t-rex-3-pro-44",
+          "deviceSource": 10682624,
+          "st": "r",
+          "sr": "w466",
+          "dw": 466
+        },
+        {
+          "name": "t-rex-3-pro-44",
+          "deviceSource": 10682625,
+          "st": "r",
+          "sr": "w466",
+          "dw": 466
+        },
+        {
+          "name": "t-rex-3-pro-44",
+          "deviceSource": 10682627,
+          "st": "r",
+          "sr": "w466",
+          "dw": 466
+        },
+        {
+          "name": "balance-2",
+          "deviceSource": 9568512,
+          "st": "r",
+          "sr": "w480",
+          "dw": 480
+        },
+        {
+          "name": "balance-2",
+          "deviceSource": 9568513,
+          "st": "r",
+          "sr": "w480",
+          "dw": 480
+        },
+        {
+          "name": "balance-2",
+          "deviceSource": 9568515,
+          "st": "r",
+          "sr": "w480",
+          "dw": 480
+        },
+        {
+          "name": "balance-2-xt",
+          "deviceSource": 10486016,
+          "st": "r",
+          "sr": "w480",
+          "dw": 480
+        },
+        {
+          "name": "balance-2-xt",
+          "deviceSource": 10486017,
+          "st": "r",
+          "sr": "w480",
+          "dw": 480
+        },
+        {
+          "name": "balance-2-xt",
+          "deviceSource": 10486019,
+          "st": "r",
+          "sr": "w480",
+          "dw": 480
+        },
+        {
+          "name": "active-max",
+          "deviceSource": 10813697,
+          "st": "r",
+          "sr": "w480",
+          "dw": 480
+        },
+        {
+          "name": "active-max",
+          "deviceSource": 10813699,
+          "st": "r",
+          "sr": "w480",
+          "dw": 480
         }
       ],
       "designWidth": 432
