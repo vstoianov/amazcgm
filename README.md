@@ -3,16 +3,22 @@
 [![Latest release](https://img.shields.io/github/v/release/vstoianov/amazcgm)](https://github.com/vstoianov/amazcgm/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/vstoianov/amazcgm/total)](https://github.com/vstoianov/amazcgm/releases)
 
-**FreeStyle Libre 2+ (EU) glucose readings directly on your Amazfit watch, over Bluetooth, with no phone in the loop.**
+**CGM glucose readings directly on your Amazfit watch, over Bluetooth, with no phone in the loop.**
 
-The watch connects to the sensor itself, unlocks the Bluetooth stream and shows a new reading every minute. Your phone can be off, at home or out of battery. You need a phone only once per sensor, to scan it with NFC.
+**Current supported sensors**: Libre 2+(EU)
+
+For Libre 2+(EU) the watch connects to the sensor itself, unlocks the Bluetooth stream and shows a new reading every minute. Your phone can be off, at home or out of battery. You need a phone only once per sensor, to scan it with NFC.
 
 > [!WARNING]
 > **AmazCGM is not a medical device.** It is an independent hobby project. It is not made, approved or supported by Abbott, Zepp Health or Amazfit.
 > Readings can be late, wrong or missing, and alarms can fail. **Do not make treatment decisions from this watch.** Confirm with your official reader, the official app or a finger-stick.
 > You use it entirely at your own risk.
 
-<!-- TODO: add a screenshot of the main screen and a link to a short demo video -->
+<p align="center">
+  <img src="docs/images/main.jpg" width="320" alt="AmazCGM main screen on an Amazfit Bip Max: 5.9 mmol/L, steady trend arrow and a 6-hour glucose chart with low and high limits">
+</p>
+
+<!-- TODO: add a link to a short demo video -->
 
 ## Features
 
@@ -22,6 +28,31 @@ The watch connects to the sensor itself, unlocks the Bluetooth stream and shows 
 - Optional calibration against finger-stick values
 - Automatic reconnect when the sensor goes out of range, with a background service that reopens the app if the watch closed it
 - Debug log you can copy from the Zepp app settings, for bug reports
+
+## Screenshots
+
+<table>
+  <tr>
+    <td align="center"><a href="docs/images/main.jpg"><img src="docs/images/main.jpg" width="220" alt="Main screen with current glucose, trend arrow and chart"></a></td>
+    <td align="center"><a href="docs/images/menu.jpg"><img src="docs/images/menu.jpg" width="220" alt="Menu: sync from phone, chart range, alarms, calibrate"></a></td>
+    <td align="center"><a href="docs/images/menu-2.jpg"><img src="docs/images/menu-2.jpg" width="220" alt="Menu, page 2: calibrate, info, send log, back"></a></td>
+  </tr>
+  <tr>
+    <td align="center">Main screen</td>
+    <td align="center">Menu</td>
+    <td align="center">Menu, page 2: info and log</td>
+  </tr>
+  <tr>
+    <td align="center"><a href="docs/images/alarms.jpg"><img src="docs/images/alarms.jpg" width="220" alt="Alarms screen: low alarm 3.9 and high alarm 7.0 mmol/L with sound settings"></a></td>
+    <td align="center"><a href="docs/images/high-alarm.jpg"><img src="docs/images/high-alarm.jpg" width="220" alt="High alarm settings: limit, sound, duration and test sound"></a></td>
+    <td align="center"><a href="docs/images/calibrate.jpg"><img src="docs/images/calibrate.jpg" width="220" alt="Calibration screen: enter a finger-stick value, save or clear"></a></td>
+  </tr>
+  <tr>
+    <td align="center">Alarms</td>
+    <td align="center">High alarm settings</td>
+    <td align="center">Calibration</td>
+  </tr>
+</table>
 
 ## Requirements
 
@@ -83,7 +114,7 @@ Maintainers: see [RELEASING.md](RELEASING.md) for how to publish a release.
 ## Battery and known limits
 
 <!-- TODO: add your measured battery life, for example "about N days with a reading every minute" -->
-
+- Battery of the **Amazfit Bip Max** last about 8-9 days with a reading every minute.
 - Bluetooth on the Bip Max sometimes gets stuck after many hours. AmazCGM detects this, rebuilds the connection and, if that fails, tells you to restart the watch.
 - When the sensor ends (after 15 days) or is replaced, scan the new one with Libre2 Key, paste the new JSON in Zepp and tap **Sync from phone** on the watch.
 - Readings stop while the watch is out of Bluetooth range of the sensor, which is usually a few metres.
@@ -103,7 +134,7 @@ The log contains your sensor's Bluetooth address. Remove it if you prefer.
 AmazCGM is free and always will be. If it helps you, you can support further development:
 
 - [GitHub Sponsors](https://github.com/sponsors/vstoianov)
-- [Ko-fi](https://ko-fi.com/KOFI_USERNAME) <!-- TODO: replace KOFI_USERNAME -->
+- [Ko-fi](https://ko-fi.com/vstoianov) 
 
 ## License
 
