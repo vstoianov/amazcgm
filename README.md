@@ -136,6 +136,12 @@ AmazCGM is free and always will be. If it helps you, you can support further dev
 - [GitHub Sponsors](https://github.com/sponsors/vstoianov)
 - [Ko-fi](https://ko-fi.com/vstoianov) 
 
+### Background Limitations & Zepp OS Support
+Because Zepp OS currently restricts BLE Master (`@zos/ble` `mst*`) APIs within background services (`app-service`), AmazCGM has to use a workaround to reopen the app if closed.
+
+If you want official background BLE Master support so AmazCGM can run silently in the background:
+👉 **[Upvote and support our feature request on the official Zepp Health Discussion #559](https://github.com/orgs/zepp-health/discussions/559)**
+
 ## License
 
 AmazCGM is licensed under the [GNU General Public License v3.0 or later](LICENSE). You may use, study, change and share it. If you distribute a changed version, it must also be released under the GPL with its source code.
