@@ -149,9 +149,9 @@ const HERO_H = Math.round(H * (ROUND ? 0.18 : 0.2))
 const SUB_Y = HERO_Y + HERO_H
 const SUB_H = Math.round(H * 0.068)
 const CHART_Y = SUB_Y + SUB_H + sp(4)
-const CHART_BOTTOM = ROUND
-  ? Math.round(H * 0.11)
-  : Math.max(sp(12), Math.round(H * 0.028))
+// Bip Max: fixed small margin. Round screens: computed in section 4 so the
+// card reaches as low as the circle still leaves it wide enough.
+const CHART_BOTTOM_RECT = Math.max(sp(12), Math.round(H * 0.028))
 
 const STATUS_CY = TOP_PAD + Math.round(STATUS_H / 2)
 const CLOCK_SIZE = STATUS_FIT.size
@@ -341,16 +341,41 @@ export const DELTA = {
 
 // 4. Glucose Chart Card in lower half
 const CHART_RADIUS = sp(20)
-const CHART_H = Math.max(sp(120), H - CHART_Y - CHART_BOTTOM)
-// Round screens: keep the card inside the circle. The card's own rounded
-// corners sit inside the edge, so test half a radius in. The Bip Max card
-// already follows its screen corners with its radius.
-const CHART_MARGIN_X = ROUND
-  ? Math.max(
-      sp(12),
-      rowInset(CHART_Y + CHART_RADIUS / 2, CHART_Y + CHART_H - CHART_RADIUS / 2) + sp(4)
-    )
-  : sp(12)
+export const CHART_HOUR_H = sp(30)
+export const CHART_PAD_B = CHART_HOUR_H + sp(6)
+
+// Round screens: side margin that keeps a card ending at `bottom` inside the
+// circle. The card's rounded corners sit inside the edge, so test half a
+// radius in; the hour-label row near the bottom is tested separately.
+function roundChartMargin(bottom) {
+  return Math.max(
+    sp(12),
+    rowInset(CHART_Y + CHART_RADIUS / 2, bottom - CHART_RADIUS / 2) + sp(4),
+    rowInset(bottom - CHART_PAD_B, bottom - sp(6)) + sp(4)
+  )
+}
+
+// Narrowest card we accept. On a circle every pixel of extra height costs
+// two or more pixels of width, so stop at ~58% of the screen width: a bit
+// taller than the plot-area optimum, without squeezing the time axis. Never
+// narrower than two hour labels plus the Y-label gutter.
+const CHART_MIN_W = Math.max(
+  CHART_PAD_L + 2 * CHART_AXIS_LABEL_W + sp(16) + CHART_GUTTER,
+  Math.round(W * 0.58)
+)
+
+// Lowest card bottom on a round screen that still leaves CHART_MIN_W.
+function fitRoundChartBottom() {
+  let b = H - sp(6)
+  const minB = CHART_Y + sp(120)
+  while (b > minB && W - 2 * roundChartMargin(b) < CHART_MIN_W) b -= sp(2)
+  return b
+}
+
+const CHART_BOTTOM_Y = ROUND ? fitRoundChartBottom() : H - CHART_BOTTOM_RECT
+const CHART_H = Math.max(sp(120), CHART_BOTTOM_Y - CHART_Y)
+// The Bip Max card already follows its screen corners with its radius.
+const CHART_MARGIN_X = ROUND ? roundChartMargin(CHART_Y + CHART_H) : sp(12)
 export const CHART = {
   x: CHART_MARGIN_X,
   y: CHART_Y,
@@ -360,8 +385,8 @@ export const CHART = {
 }
 
 export const CHART_PAD_T = sp(8)
-export const CHART_HOUR_H = sp(30)
-export const CHART_PAD_B = CHART_HOUR_H + sp(6)
+// Minimum distance between Y-label centres: about the glyph height plus air.
+export const CHART_SCALE_MIN_GAP = CHART_SCALE_SIZE + sp(4)
 
 export const STATUS = {
   x: CHART.x + sp(14),

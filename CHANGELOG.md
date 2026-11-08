@@ -2,6 +2,9 @@
 
 All notable changes to AmazCGM are listed here. The newest version is at the top.
 
+## 1.8.4
+- Fixed layout for T-Rex 3 Pro 44mm
+
 ## 1.8.3
 
 - New way to send a sensor's keys to the watch: in Libre2 Key tap **Share JSON**, paste it in Zepp under AmazCGM settings with **Paste JSON**, then tap **Sync from phone** on the watch.

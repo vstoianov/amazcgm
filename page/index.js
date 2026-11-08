@@ -44,6 +44,7 @@ import {
   CHART_SCALE_SIZE,
   CHART_SCALE_LABEL_H,
   CHART_SCALE_PAD_R,
+  CHART_SCALE_MIN_GAP,
   CHART_GUTTER,
   CHART_AXIS,
   CHART_AXIS_INSET,
@@ -143,6 +144,7 @@ import {
   stopAlertAudio
 } from '../shared/alarms'
 import { applyCalFit } from '../shared/cal-fit'
+import { fitScaleTicks } from '../shared/chart-ticks'
 import {
   startSensorService,
   stopSensorService,
@@ -2509,7 +2511,18 @@ Page(
     updateScaleLabels(min, max, padT, innerH, ticks) {
       if (!this.scaleLabels || !this.scaleLabels.length) return
       const labelH = CHART_SCALE_LABEL_H
-      const visible = ticks || CHART_TICKS
+      // Only as many labels as fit without overlapping; grid lines still
+      // use every tick.
+      const visible = fitScaleTicks(
+        ticks || CHART_TICKS,
+        min,
+        max,
+        padT,
+        innerH,
+        labelH,
+        CHART_AXIS.y - CHART.y,
+        CHART_SCALE_MIN_GAP
+      )
       for (let i = 0; i < this.scaleLabels.length; i++) {
         const w = this.scaleLabels[i]
         if (!w) continue

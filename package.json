@@ -1,12 +1,12 @@
 {
   "name": "bip-max-libre",
-  "version": "1.8.3",
+  "version": "1.8.4",
   "license": "GPL-3.0-or-later",
   "private": true,
   "type": "module",
-  "description": "AmazCGM: Zepp OS app for Libre 2+ EU BLE streaming on Amazfit Bip Max",
+  "description": "AmazCGM: Zepp OS app for CGM sensors with direct BLE streaming on Amazfit watches",
   "scripts": {
-    "test": "node shared/crypto.test.mjs",
+    "test": "node shared/crypto.test.mjs && node shared/chart-ticks.test.mjs",
     "preview": "zeus preview",
     "build": "zeus build",
     "release": "bash scripts/release.sh"
