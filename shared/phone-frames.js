@@ -1,5 +1,5 @@
 /**
- * Bluetooth LE hand-off from Libre2 Key: pure helpers, no device APIs, so
+ * Bluetooth LE hand-off from AmazCGM for Android: pure helpers, no device APIs, so
  * they run under `npm test`. Must match ble/ScanFrames.kt on the phone.
  *
  * Advert manufacturer data: "AMZCGM" + version 0x01 + CRC32 (LE) of the JSON.
@@ -11,7 +11,7 @@ export const PHONE_CONTROL = 'AC11'
 export const PHONE_DATA = 'AC12'
 export const PHONE_MAGIC_HEX = '414d5a43474d01'
 export const PHONE_SERVICE_VERSION = 1
-/** Name Libre2 Key advertises while visible (ScanBlePeripheral.ADVERTISED_NAME). */
+/** Name AmazCGM for Android advertises while visible (ScanBlePeripheral.ADVERTISED_NAME). */
 export const PHONE_NAME = 'AMZCGM'
 
 /** Scan-result name as text; Zepp may hand it over as bytes. */
@@ -39,7 +39,7 @@ export function advertName(device) {
   }
 }
 
-/** True when the advertised name is Libre2 Key's, like nameMatches() for ABBOTT. */
+/** True when the advertised name is AmazCGM for Android's, like nameMatches() for ABBOTT. */
 export function isPhoneName(name) {
   const n = String(name || '')
     .toUpperCase()
@@ -82,7 +82,7 @@ export function parsePhoneServiceData(hex) {
 }
 
 /**
- * Is this scan result Libre2 Key? Checks, like the sensor match does, the
+ * Is this scan result AmazCGM for Android? Checks, like the sensor match does, the
  * single uuid, the service UUID list and the service data list, and finally
  * the manufacturer data. Returns { crc, via } or null; crc may be null.
  */
@@ -136,7 +136,7 @@ export function describeAdvert(device) {
 }
 
 /**
- * Finds the Libre2 Key marker in a scan result's vendor_data hex string.
+ * Finds the AmazCGM for Android marker in a scan result's vendor_data hex string.
  * Returns { crc } (unsigned) or null. Works whether or not the company ID
  * precedes the payload.
  */

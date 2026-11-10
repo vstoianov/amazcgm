@@ -179,7 +179,7 @@ const SYNC_WATCHDOG_MS = 70000
 /** pullScanOverBle error codes, as watch toasts. */
 const BLE_SYNC_ERROR_TEXT = {
   'ble-off': 'Bluetooth unavailable',
-  'not-found': 'Phone not visible. Open Libre2 Key',
+  'not-found': 'Phone not visible. Open AmazCGM for Android',
   connect: 'Could not connect to phone',
   transfer: 'Transfer from phone failed',
   crc: 'Transfer damaged, try again'
@@ -873,7 +873,7 @@ Page(
             ? this.syncState
             : serial
               ? serial
-              : 'Bluetooth from Libre2 Key',
+              : 'Bluetooth from AmazCGM for Android',
         rangeSub: winH + ' hours',
         alarmsSub: fmtMmol(alarms.low.mmol) + ' – ' + fmtMmol(alarms.high.mmol) + ' mmol/L',
         calSub: fit && fit.n > 0 ? 'Active · n=' + fit.n : 'Blood glucose ref',
@@ -1608,7 +1608,7 @@ Page(
     },
 
     /**
-     * "Sync from phone": Bluetooth straight from Libre2 Key first, then the
+     * "Sync from phone": Bluetooth straight from AmazCGM for Android first, then the
      * scan pasted in Zepp settings.
      */
     syncFromScanner() {
