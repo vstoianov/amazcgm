@@ -1,5 +1,5 @@
 /**
- * Pull the activation scan straight from Libre2 Key on an Android phone over
+ * Pull the activation scan straight from AmazCGM for Android on an Android phone over
  * Bluetooth LE. No Zepp app, iPhone or Wi-Fi in the path.
  *
  * Only run this while the sensor client is parked: ble-master keeps its

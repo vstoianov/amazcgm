@@ -72,12 +72,12 @@ Other Libre models (Libre 2 US, Libre 3) are not supported. If you run AmazCGM o
 
 ## How it works
 
-1. **Once per sensor:** scan the sensor with the [Libre2 Key](https://github.com/vstoianov/cgmnfc) Android app. It reads the sensor over NFC and shows its serial number and patch info.
-2. In Libre2 Key tap **Share JSON** and send it to the phone with the Zepp app. In Zepp open **Profile → your watch → App settings → AmazCGM** and tap **Paste JSON**.
+1. **Once per sensor:** scan the sensor with the [AmazCGM for Android](https://github.com/vstoianov/amazcgm-android) Android app. It reads the sensor over NFC and shows its serial number and patch info.
+2. In AmazCGM for Android tap **Share JSON** and send it to the phone with the Zepp app. In Zepp open **Profile → your watch → App settings → AmazCGM** and tap **Paste JSON**.
 3. Open AmazCGM on the watch and tap **Sync from phone** in its menu. The watch shows the serial and patch it got.
 4. **From then on, the watch works alone.** It finds the sensor's Bluetooth advert, logs in, sends the unlock command and decrypts each glucose packet on the watch.
 
-**Direct Bluetooth.** After a scan, Libre2 Key is also visible to the watch over Bluetooth for 10 minutes, and **Sync from phone** tries that first, without the Zepp app. While visible, Libre2 Key names the phone `AMZCGM` in Bluetooth, the same way the sensor advertises `ABBOTT<serial>`; the phone's normal name comes back afterwards. During the attempt the watch pauses its sensor link for a few seconds. If it reports "Not found", **Nearby devices** in the AmazCGM menu lists what the scan saw, and the sync falls back to the scan pasted in Zepp.
+**Direct Bluetooth.** After a scan, AmazCGM for Android is also visible to the watch over Bluetooth for 10 minutes, and **Sync from phone** tries that first, without the Zepp app. While visible, AmazCGM for Android names the phone `AMZCGM` in Bluetooth, the same way the sensor advertises `ABBOTT<serial>`; the phone's normal name comes back afterwards. During the attempt the watch pauses its sensor link for a few seconds. If it reports "Not found", **Nearby devices** in the AmazCGM menu lists what the scan saw, and the sync falls back to the scan pasted in Zepp.
 
 Zepp OS gives watch apps no network access, so there is no Wi‑Fi transfer.
 
@@ -116,7 +116,7 @@ Maintainers: see [RELEASING.md](RELEASING.md) for how to publish a release.
 <!-- TODO: add your measured battery life, for example "about N days with a reading every minute" -->
 - Battery of the **Amazfit Bip Max** last about 8-9 days with a reading every minute.
 - Bluetooth on the Bip Max sometimes gets stuck after many hours. AmazCGM detects this, rebuilds the connection and, if that fails, tells you to restart the watch.
-- When the sensor ends (after 15 days) or is replaced, scan the new one with Libre2 Key, paste the new JSON in Zepp and tap **Sync from phone** on the watch.
+- When the sensor ends (after 15 days) or is replaced, scan the new one with AmazCGM for Android, paste the new JSON in Zepp and tap **Sync from phone** on the watch.
 - Readings stop while the watch is out of Bluetooth range of the sensor, which is usually a few metres.
 
 ## Reporting a problem

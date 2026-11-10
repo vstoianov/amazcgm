@@ -93,7 +93,7 @@ export const MENU_ITEM_H = Math.round(H * 0.175)
 export const MENU_ITEM_SPACE = sp(12)
 
 export const MENU_ITEMS = [
-  { label: 'Sync from phone', sub: 'Bluetooth from Libre2 Key' },
+  { label: 'Sync from phone', sub: 'Bluetooth from AmazCGM for Android' },
   { label: 'Chart range', sub: '3 hours' },
   { label: 'Alarms', sub: '3.9 – 10.0 mmol/L' },
   { label: 'Calibrate', sub: 'Blood glucose ref' },
@@ -105,7 +105,7 @@ export const MENU_ITEMS = [
 export function buildMenuItems(meta) {
   const m = meta || {}
   return [
-    { label: 'Sync from phone', sub: m.syncSub || 'Bluetooth from Libre2 Key' },
+    { label: 'Sync from phone', sub: m.syncSub || 'Bluetooth from AmazCGM for Android' },
     { label: 'Chart range', sub: m.rangeSub || '3 hours' },
     { label: 'Alarms', sub: m.alarmsSub || '3.9 – 10.0 mmol/L' },
     { label: 'Calibrate', sub: m.calSub || 'Blood glucose ref' },

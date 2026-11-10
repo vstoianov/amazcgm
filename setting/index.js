@@ -307,8 +307,8 @@ AppSettingsPage({
       sensorChildren.push(
         Text({ style: this.hintStyle() }, [
           stored
-            ? 'Stored text is not a Libre2 Key scan'
-            : 'No sensor yet. In Libre2 Key tap Share JSON, then paste it here.'
+            ? 'Stored text is not a AmazCGM for Android scan'
+            : 'No sensor yet. In AmazCGM for Android tap Share JSON, then paste it here.'
         ])
       )
     }
