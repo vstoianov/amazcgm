@@ -1,6 +1,6 @@
 {
-  "name": "bip-max-libre",
-  "version": "1.8.4",
+  "name": "amaz-cgm",
+  "version": "1.8.5",
   "license": "GPL-3.0-or-later",
   "private": true,
   "type": "module",

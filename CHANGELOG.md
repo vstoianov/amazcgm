@@ -2,6 +2,10 @@
 
 All notable changes to AmazCGM are listed here. The newest version is at the top.
 
+## 1.8.5
+- When Zepp OS closes the AmazCGM screen, the watch reopens it about a minute sooner and reconnects to the sensor within seconds instead of minutes.
+- Y-axis labels on the chart no longer overlap on round watches; the chart is a little taller there.
+
 ## 1.8.4
 - Fixed layout for T-Rex 3 Pro 44mm
 
