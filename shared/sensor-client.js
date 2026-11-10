@@ -763,11 +763,25 @@ export function createSensorClient(initialHooks) {
       timeSensor = null
       wdMinuteCb = null
     }
-    wdGraceUntil = Date.now() + 120000
+    const now = Date.now()
+    // The grace softens the quiet check for a connect in progress. A link
+    // that was up when the page died is dead in practice (its packets stop
+    // with the page), so with linkUp the quiet check keeps its 75s limit.
+    wdGraceUntil = linkUp ? 0 : now + 120000
     ensureWatchdog()
     // The page re-adopts a held client here; do not wait a minute if its
     // connect is already dead.
-    rescueStaleConnect(Date.now())
+    if (rescueStaleConnect(now)) return true
+    // Nor if its link is already quiet: rebuild now, the way the minute
+    // watchdog would on its next tick.
+    if (linkUp && lastPacketAt && now - lastPacketAt >= LIVE_QUIET_MS) {
+      try {
+        trace('held quiet-adopt ' + Math.round((now - lastPacketAt) / 1000) + 's')
+      } catch (e) {}
+      reconnectQuietStream()
+      return true
+    }
+    return false
   }
 
   function ensureWatchdog() {
@@ -2222,8 +2236,9 @@ export function createSensorClient(initialHooks) {
     setHooks(next) {
       hooks = next || {}
     },
+    /** True when it already started a reconnect for a dead held link. */
     rearmWatchdog() {
-      rearmWatchdog()
+      return rearmWatchdog()
     },
     park() {
       sessionWanted = false

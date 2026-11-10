@@ -61,7 +61,12 @@ function postSignal(content) {
 
 const STALE_MS = 3 * 60 * 1000
 const RELAUNCH_EVERY_MS = 10 * 60 * 1000
-const CLOSED_RELAUNCH_MS = 120000
+// The page writes uiAliveAt once a minute (Time.onPerMinute, also with the
+// screen off). 90s tolerates one late write; the two-tick confirmation below
+// covers a blank read. The old 120s put the relaunch at kill + 4-5 min.
+const CLOSED_RELAUNCH_MS = 90000
+// Two missed 1-minute packets. STALE_MS stays for the notifications.
+const RELAUNCH_STALE_MS = 120000
 const STALE_NAG_MS = 10 * 60 * 1000
 const TICK_TRACE_MS = 5 * 60 * 1000
 const SVC_GRACE_MS = 30000
@@ -284,7 +289,7 @@ AppService({
           this.state.staleNoted = false
         }
       }
-      if (!uiDead || age <= STALE_MS) {
+      if (!uiDead || age <= RELAUNCH_STALE_MS) {
         this.state.lastRelaunchAt = 0
       } else if (
         !silent &&

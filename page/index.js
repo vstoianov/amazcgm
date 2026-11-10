@@ -196,6 +196,7 @@ const SVC_RESTART_EVERY_MS = 15 * 60 * 1000
 const SELF_RELAUNCH_DELAY_S = 180
 const BLE_STUCK_NAG_MS = 10 * 60 * 1000
 const READING_STALE_MS = 3 * 60 * 1000
+const STALL_REBUILD_MS = 4 * 60 * 1000
 
 function keepPageAwake() {
   try {
@@ -690,6 +691,18 @@ Page(
       }
       try {
         if (this.battery && this.onBatteryChange) this.battery.offChange(this.onBatteryChange)
+      } catch (e) {}
+      try {
+        const c = this.pageClient
+        const linked = !!(c && c.isLinked && c.isLinked())
+        const at = c && c.lastPacketAt ? c.lastPacketAt() : 0
+        trace(
+          'page destroy linked=' +
+            (linked ? 1 : 0) +
+            ' age=' +
+            (at ? Math.round((Date.now() - at) / 1000) : -1) +
+            's'
+        )
       } catch (e) {}
       try {
         flushTrace()
@@ -2188,7 +2201,9 @@ Page(
         getSessionWanted() &&
         packetAt &&
         !(client.isBusy && client.isBusy()) &&
-        Date.now() - packetAt > 3 * 60 * 1000 &&
+        // Last resort: the client's own 75s quiet check (minute watchdog)
+        // gets the first try with the light rebootBle(true) path.
+        Date.now() - packetAt > STALL_REBUILD_MS &&
         Date.now() - (this.lastClientStatusAt || 0) > 90000 &&
         Date.now() - (this.lastStallRebuildAt || 0) >= 5 * 60 * 1000
       ) {
@@ -2252,25 +2267,25 @@ Page(
           if (linked) {
             this.pageClient = held
             held.setHooks(hooks)
-            if (held.rearmWatchdog) held.rearmWatchdog()
-            if (age < 150000) {
-              this.setConnected(true)
-              const sec = Math.floor(age / 1000)
-              this.setStatus(
-                sec < 20
-                  ? 'Live'
-                  : sec < 60
-                    ? 'Live · ' + sec + 's ago'
-                    : 'Live · ' + Math.floor(sec / 60) + 'm ago'
-              )
+            // A quiet held link is rebuilt by rearmWatchdog() at once; a
+            // recent one gets its 75s quiet check on the next minute tick.
+            const acted = !!(held.rearmWatchdog && held.rearmWatchdog())
+            this.setConnected(true)
+            if (acted) {
+              this.setStatus('Reconnecting…')
+              try {
+                trace('held stale-reuse ' + Math.round(age / 1000) + 's')
+              } catch (e) {}
               return
             }
-            this.setConnected(true)
-            this.setStatus('Reconnecting…')
-            try {
-              trace('held stale-reuse ' + Math.round(age / 1000) + 's')
-            } catch (e) {}
-            if (held.resumeStale) held.resumeStale()
+            const sec = Math.floor(age / 1000)
+            this.setStatus(
+              sec < 20
+                ? 'Live'
+                : sec < 60
+                  ? 'Live · ' + sec + 's ago'
+                  : 'Live · ' + Math.floor(sec / 60) + 'm ago'
+            )
             return
           }
         } catch (e) {}
