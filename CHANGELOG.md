@@ -5,6 +5,10 @@ All notable changes to AmazCGM are listed here. The newest version is at the top
 ## 1.8.5
 - When Zepp OS closes the AmazCGM screen, the watch reopens it about a minute sooner and reconnects to the sensor within seconds instead of minutes.
 - Y-axis labels on the chart no longer overlap on round watches; the chart is a little taller there.
+- Menu items and buttons in Settings now light up when tapped, so you can see that a tap registered. Scrolling the menu does not highlight items.
+- New menu item at the top: a red **Disconnect** while the sensor session is on, a green **Connect** while it is off. **Disconnect** (after a confirmation) stops the sensor link and the background service, and the app no longer reopens or reconnects by itself until you tap **Connect**.
+- Fixed an empty Settings menu after swiping back from **Nearby devices**.
+- Reconnects about a minute sooner after the sensor drops the link, and no longer pauses for 3 minutes after the first series of failed reconnects. Failed logins at a very weak signal no longer count as a stuck watch Bluetooth.
 
 ## 1.8.4
 - Fixed layout for T-Rex 3 Pro 44mm

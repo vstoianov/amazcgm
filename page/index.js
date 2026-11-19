@@ -64,7 +64,14 @@ import {
   TITLE as SETTINGS_TITLE,
   buildMenuItems,
   nearbyItems,
-  menuListProps,
+  MENU_LIST,
+  menuRow,
+  menuContentH,
+  TAP_SLOP,
+  CONFIRM_TITLE,
+  CONFIRM_TEXT,
+  CONFIRM_OK_BTN,
+  CONFIRM_CANCEL_BTN,
   TF_TITLE,
   TF_CHIPS,
   TF_BACK_BTN,
@@ -134,7 +141,9 @@ import {
   getAlarms,
   setAlarms,
   getNoticeAccepted,
-  setNoticeAccepted
+  setNoticeAccepted,
+  getUserStopped,
+  setUserStopped
 } from '../shared/session'
 import {
   zoneForMmol,
@@ -481,6 +490,14 @@ Page(
                 this.closeInfo()
                 return true
               }
+              if (this.nearbyOpen) {
+                this.closeNearby()
+                return true
+              }
+              if (this.confirmOpen) {
+                this.closeConfirm()
+                return true
+              }
               if (this.settingsOpen) {
                 this.closeSettings()
                 return true
@@ -607,6 +624,10 @@ Page(
       if (fresh) this.sweepRelaunchAlarms()
       if (getSessionWanted()) {
         this.resumeSession()
+      } else if (getUserStopped()) {
+        // Disconnected in Settings: stay off until Connect.
+        this.setRelaunch(false)
+        this.setStatus('Disconnected · Settings → Connect')
       } else if (fresh && hasStoredScan()) {
         setSessionWanted(true)
         this.resumeSession()
@@ -849,16 +870,130 @@ Page(
       this.showSettingsMenu()
     },
 
-    hideSettingsMenu() {
-      const w = this.menuListW
-      if (!w) return
-      this.menuListW = null
-      const list = this.overlayW || []
-      const idx = list.indexOf(w)
-      if (idx >= 0) list.splice(idx, 1)
+    /**
+     * A scrolling list of rows that light up while pressed. SCROLL_LIST has
+     * no pressed state, so each row is a FILL_RECT + two TEXTs with a
+     * transparent TEXT on top that takes the touch.
+     */
+    buildRowList(items, onClick) {
+      const list = { container: null, rows: [], ids: [] }
+      try {
+        list.container = createWidget(widget.VIEW_CONTAINER, {
+          x: MENU_LIST.x,
+          y: MENU_LIST.y,
+          w: MENU_LIST.w,
+          h: MENU_LIST.h,
+          scroll_enable: true,
+          scroll_frame_func: (info) => {
+            // A real scroll (offset moved) after the finger went down makes
+            // it a drag. Without yoffset the move distance check decides.
+            const off = info && info.yoffset != null ? Number(info.yoffset) : NaN
+            if (!Number.isFinite(off)) return
+            if (list.lastOffset != null && Math.abs(off - list.lastOffset) > 2) {
+              list.scrolledAt = Date.now()
+            }
+            list.lastOffset = off
+          }
+        })
+      } catch (e) {
+        list.container = null
+      }
+      const c = list.container
+      const make = (type, props) =>
+        c && c.createWidget ? c.createWidget(type, props) : createWidget(type, props)
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i]
+        const g = menuRow(i, item.tone)
+        const row = {
+          bg: null,
+          sub: null,
+          geom: g.bg,
+          normalColor: g.normalColor,
+          pressColor: g.pressColor
+        }
+        try {
+          row.bg = make(widget.FILL_RECT, g.bg)
+          make(widget.TEXT, { ...g.label, text: item.label })
+          row.sub = make(widget.TEXT, { ...g.sub, text: item.sub || '' })
+          const hit = make(widget.TEXT, g.hit)
+          this.bindRowPress(list, row, hit, () => onClick(item, i))
+        } catch (e) {}
+        list.rows.push(row)
+        list.ids.push(item.id || '')
+      }
+      try {
+        // Sets the scroll height and keeps the last row clear of a round edge.
+        make(widget.FILL_RECT, {
+          x: 0,
+          y: menuContentH(items.length) - 1,
+          w: 1,
+          h: 1,
+          color: COLORS.bg
+        })
+      } catch (e) {}
+      return list
+    },
+
+    paintRow(row, color) {
+      if (!row || !row.bg) return
+      try {
+        row.bg.setProperty(prop.MORE, { ...row.geom, color: color })
+      } catch (e) {}
+    },
+
+    bindRowPress(list, row, hit, action) {
+      if (!hit || !hit.addEventListener || !event) return
+      let downAt = 0
+      let downX = 0
+      let downY = 0
+      // CLICK_DOWN also starts every scroll drag, so nothing is painted
+      // here: the row lights up only once a release proves it was a tap.
+      hit.addEventListener(event.CLICK_DOWN, (info) => {
+        downAt = Date.now()
+        downX = info && info.x != null ? Number(info.x) : 0
+        downY = info && info.y != null ? Number(info.y) : 0
+      })
+      if (event.MOVE_OUT != null) {
+        hit.addEventListener(event.MOVE_OUT, () => {
+          downAt = 0
+        })
+      }
+      hit.addEventListener(event.CLICK_UP, (info) => {
+        const at = downAt
+        downAt = 0
+        const x = info && info.x != null ? Number(info.x) : downX
+        const y = info && info.y != null ? Number(info.y) : downY
+        const moved = Math.abs(x - downX) > TAP_SLOP || Math.abs(y - downY) > TAP_SLOP
+        const dragged = !at || moved || (list.scrolledAt || 0) >= at
+        if (dragged || this.rowTapTimer) return
+        // A tap: flash the press colour, then act. The delay also keeps the
+        // list from being deleted inside its own touch callback.
+        this.paintRow(row, row.pressColor)
+        this.rowTapTimer = setTimeout(() => {
+          this.rowTapTimer = null
+          this.paintRow(row, row.normalColor)
+          action()
+        }, 150)
+      })
+    },
+
+    deleteRowList(list) {
+      if (!list || !list.container) return
+      const w = list.container
+      list.container = null
+      const all = this.overlayW || []
+      const idx = all.indexOf(w)
+      if (idx >= 0) all.splice(idx, 1)
       try {
         deleteWidget(w)
       } catch (e) {}
+    },
+
+    hideSettingsMenu() {
+      const list = this.menuListW
+      if (!list) return
+      this.menuListW = null
+      this.deleteRowList(list)
     },
 
     menuItemsData() {
@@ -867,7 +1002,20 @@ Page(
       const winH = Math.round(this.chartWindowMin() / 60)
       const alarms = getAlarms()
       const fit = getCalFit()
+      const sessionOn = getSessionWanted()
+      const linkState = this.syncing
+        ? 'Paused for sync'
+        : this.connected
+          ? this.lastMmol && !this.isStale()
+            ? 'Live'
+            : 'Linked'
+          : 'Connecting'
       return buildMenuItems({
+        sessionOn: sessionOn,
+        linkSub: linkState + (serial ? ' · ' + serial : ''),
+        connectSub: hasStoredScan()
+          ? (serial || 'Stored sensor') + ' · tap to connect'
+          : 'No sensor · sync first',
         syncSub:
           this.syncState && (this.syncing || Date.now() - (this.syncStateAt || 0) < SYNC_STATE_KEEP_MS)
             ? this.syncState
@@ -886,14 +1034,20 @@ Page(
 
     showSettingsMenu() {
       if (!this.settingsOpen || this.menuListW) return
-      if (this.tfOpen || this.alarmOpen || this.infoOpen || this.calOpen || this.nearbyOpen) return
+      if (
+        this.tfOpen ||
+        this.alarmOpen ||
+        this.infoOpen ||
+        this.calOpen ||
+        this.nearbyOpen ||
+        this.confirmOpen
+      ) {
+        return
+      }
       try {
-        const w = createWidget(
-          widget.SCROLL_LIST,
-          menuListProps((list, index) => this.onMenuClick(index), this.menuItemsData())
-        )
-        this.menuListW = w
-        if (w && this.overlayW) this.overlayW.push(w)
+        const list = this.buildRowList(this.menuItemsData(), (item) => this.onMenuClick(item.id))
+        this.menuListW = list
+        if (list.container && this.overlayW) this.overlayW.push(list.container)
       } catch (e) {}
     },
 
@@ -901,38 +1055,54 @@ Page(
     setSyncState(text) {
       this.syncState = text || ''
       this.syncStateAt = Date.now()
-      this.refreshSyncItem()
+      this.refreshMenu()
     },
 
-    refreshSyncItem() {
+    /**
+     * Update the menu subtitles in place (keeps the scroll position). The
+     * list is rebuilt only when its rows change (Connect ↔ Disconnect).
+     */
+    refreshMenu() {
       if (this.syncRefreshTimer) return
       const wait = Math.max(0, 1000 - (Date.now() - (this.syncRefreshAt || 0)))
-      // Never rebuild the list inside its own click callback.
+      // Never rebuild the list inside its own touch callback.
       this.syncRefreshTimer = setTimeout(() => {
         this.syncRefreshTimer = null
         this.syncRefreshAt = Date.now()
-        if (!this.settingsOpen || !this.menuListW) return
+        const list = this.menuListW
+        if (!this.settingsOpen || !list) return
         try {
-          this.hideSettingsMenu()
-          this.showSettingsMenu()
+          const items = this.menuItemsData()
+          const same =
+            items.length === list.ids.length &&
+            items.every((it, i) => (it.id || '') === list.ids[i])
+          if (!same) {
+            this.hideSettingsMenu()
+            this.showSettingsMenu()
+            return
+          }
+          for (let i = 0; i < items.length; i++) {
+            const sub = list.rows[i] && list.rows[i].sub
+            if (sub) sub.setProperty(prop.TEXT, items[i].sub || '')
+          }
         } catch (e) {}
       }, Math.max(50, wait))
     },
 
-    onMenuClick(index) {
-      if (index === 0) {
-        try {
-          trace('menu sync tap')
-        } catch (e) {}
-        this.syncFromScanner()
-      }
-      else if (index === 1) this.openTimeframe()
-      else if (index === 2) this.openAlarms()
-      else if (index === 3) this.openCalibrate()
-      else if (index === 4) this.openInfo()
-      else if (index === 5) this.sendLog()
-      else if (index === 6) this.openNearby()
-      else if (index === 7) this.closeSettings()
+    onMenuClick(id) {
+      try {
+        trace('menu ' + id + ' tap')
+      } catch (e) {}
+      if (id === 'disconnect') this.openConfirm()
+      else if (id === 'connect') this.connectSensor()
+      else if (id === 'sync') this.syncFromScanner()
+      else if (id === 'range') this.openTimeframe()
+      else if (id === 'alarms') this.openAlarms()
+      else if (id === 'cal') this.openCalibrate()
+      else if (id === 'info') this.openInfo()
+      else if (id === 'log') this.sendLog()
+      else if (id === 'nearby') this.openNearby()
+      else if (id === 'back') this.closeSettings()
     },
 
     /** Devices the last sync saw, for diagnosing "Not found" without a log. */
@@ -942,11 +1112,8 @@ Page(
       this.nearbyOpen = true
       try {
         const sample = (this.lastSyncStats && this.lastSyncStats.sample) || []
-        this.nearbyW = createWidget(
-          widget.SCROLL_LIST,
-          menuListProps((list, index) => this.closeNearby(), nearbyItems(sample))
-        )
-        if (this.nearbyW && this.overlayW) this.overlayW.push(this.nearbyW)
+        this.nearbyW = this.buildRowList(nearbyItems(sample), () => this.closeNearby())
+        if (this.nearbyW.container && this.overlayW) this.overlayW.push(this.nearbyW.container)
       } catch (e) {
         this.nearbyOpen = false
         this.showSettingsMenu()
@@ -956,18 +1123,132 @@ Page(
     closeNearby() {
       if (!this.nearbyOpen) return
       this.nearbyOpen = false
-      const w = this.nearbyW
+      const list = this.nearbyW
       this.nearbyW = null
-      if (w) {
-        const list = this.overlayW || []
-        const idx = list.indexOf(w)
-        if (idx >= 0) list.splice(idx, 1)
-        try {
-          deleteWidget(w)
-        } catch (e) {}
-      }
+      this.deleteRowList(list)
       this.showSettingsMenu()
     },
+
+    /** "Disconnect?" screen: the stop is sticky, so ask first. */
+    openConfirm() {
+      if (this.confirmOpen) return
+      this.hideSettingsMenu()
+      this.confirmOpen = true
+      this.confirmW = []
+      const add = (type, opts) => {
+        try {
+          const w = createWidget(type, opts)
+          if (w) this.confirmW.push(w)
+        } catch (e) {}
+      }
+      add(widget.FILL_RECT, { x: 0, y: 0, w: W, h: H, color: COLORS.bg })
+      add(widget.TEXT, CONFIRM_TITLE)
+      add(widget.TEXT, CONFIRM_TEXT)
+      add(widget.BUTTON, {
+        ...CONFIRM_OK_BTN,
+        click_func: () => {
+          // Let the press colour show, then tear the screen down.
+          setTimeout(() => {
+            this.closeConfirm(false)
+            this.disconnectSensor()
+            this.showSettingsMenu()
+          }, 80)
+        }
+      })
+      add(widget.BUTTON, {
+        ...CONFIRM_CANCEL_BTN,
+        click_func: () => setTimeout(() => this.closeConfirm(), 80)
+      })
+    },
+
+    closeConfirm(restoreMenu) {
+      if (!this.confirmOpen) return
+      this.confirmOpen = false
+      const list = this.confirmW || []
+      this.confirmW = []
+      for (let i = 0; i < list.length; i++) {
+        try {
+          deleteWidget(list[i])
+        } catch (e) {}
+      }
+      if (restoreMenu !== false) this.showSettingsMenu()
+    },
+
+    /**
+     * Stop the sensor session for good: BLE link, watchdog, relaunch alarms,
+     * wake relaunch and the background service. Stays off until Connect.
+     */
+    disconnectSensor() {
+      try {
+        trace('user disconnect')
+      } catch (e) {}
+      if (this.syncing) {
+        this.syncResume = false
+        this.endSync()
+      }
+      setUserStopped(true)
+      setSessionWanted(false)
+      const client = this.pageClient || getHeldClient()
+      this.pageClient = null
+      clearHeldClient()
+      if (client) {
+        try {
+          if (client.stop) client.stop()
+          else client.disconnect()
+        } catch (e) {
+          try {
+            trace('stop threw ' + ((e && e.message) || ''))
+          } catch (e2) {}
+        }
+      }
+      setNeedsForceResume(false)
+      this.setRelaunch(false)
+      relaxPageAwake()
+      this.clearRelaunchTimer()
+      this.sweepRelaunchAlarms()
+      stopSensorService().then(
+        () => {
+          try {
+            trace('svc stopped by user')
+          } catch (e) {}
+        },
+        () => {}
+      )
+      this.setConnected(false)
+      this.setStatus('Disconnected')
+      showToast({ text: 'Disconnected' })
+      try {
+        flushTrace()
+      } catch (e) {}
+    },
+
+    /** Start the session with the stored sensor (current or newly synced). */
+    connectSensor() {
+      if (!hasStoredScan()) {
+        showToast({ text: 'No sensor · Sync from phone first' })
+        return
+      }
+      if (this.syncing) {
+        showToast({ text: 'Sync running · wait' })
+        return
+      }
+      try {
+        trace('user connect')
+      } catch (e) {}
+      setUserStopped(false)
+      const old = this.pageClient || getHeldClient()
+      this.pageClient = null
+      clearHeldClient()
+      if (old) {
+        try {
+          if (old.park) old.park()
+        } catch (e) {}
+      }
+      showToast({ text: 'Connecting…' })
+      this.resumeSession()
+      this.refreshMenu()
+    },
+
 
     openAlarms() {
       if (this.alarmOpen) return
@@ -1088,6 +1369,7 @@ Page(
       const next = {}
       next[key] = { mmol: Math.round((Number(cur.mmol) + Number(delta)) * 10) / 10 }
       const alarms = setAlarms(next)
+      if (alarms[key].mmol === cur.mmol) showToast({ text: 'Limit reached' })
       const keys = ['low', 'high']
       for (let i = 0; i < keys.length; i++) {
         const k = keys[i]
@@ -1100,15 +1382,22 @@ Page(
     },
 
     toggleAlarmSound(key) {
+      if (this.soundToggleTimer) return
       const cur = getAlarms()[key]
       const next = {}
       next[key] = { sound: !cur.sound }
       const a = setAlarms(next)[key]
       const layout = key === 'high' ? ALARM_HIGH.sound : ALARM_LOW.sound
-      try {
-        if (this.alarmSoundW && this.alarmSoundW[key]) deleteWidget(this.alarmSoundW[key])
-      } catch (e) {}
-      this.alarmSoundW[key] = this.createAlarmSoundBtn(this.alarmMake(), key, layout, !!a.sound)
+      // BUTTON colours cannot be changed with setProperty, so the button is
+      // recreated. Wait so the press colour shows and the callback returns.
+      this.soundToggleTimer = setTimeout(() => {
+        this.soundToggleTimer = null
+        if (!this.alarmOpen) return
+        try {
+          if (this.alarmSoundW && this.alarmSoundW[key]) deleteWidget(this.alarmSoundW[key])
+        } catch (e) {}
+        this.alarmSoundW[key] = this.createAlarmSoundBtn(this.alarmMake(), key, layout, !!a.sound)
+      }, 120)
     },
 
     stepAlarmDuration(key, delta) {
@@ -1116,6 +1405,7 @@ Page(
       const next = {}
       next[key] = { duration: Number(cur.duration) + Number(delta) }
       const a = setAlarms(next)[key]
+      if (a.duration === cur.duration) showToast({ text: 'Limit reached' })
       try {
         if (this.alarmDurW && this.alarmDurW[key]) {
           this.alarmDurW[key].setProperty(prop.TEXT, String(a.duration) + 's')
@@ -1190,16 +1480,22 @@ Page(
     },
 
     styleTfChips() {
-      if (!this.tfOpen) return
-      const old = this.tfChipW || []
-      for (let i = 0; i < old.length; i++) {
-        try {
-          deleteWidget(old[i])
-        } catch (e) {}
-        const idx = this.tfW.indexOf(old[i])
-        if (idx >= 0) this.tfW.splice(idx, 1)
-      }
-      this.tfChipW = this.createTfChips()
+      if (!this.tfOpen || this.tfStyleTimer) return
+      // Recreated (colours are creation-only); wait so the press shows and
+      // the chip's own callback has returned.
+      this.tfStyleTimer = setTimeout(() => {
+        this.tfStyleTimer = null
+        if (!this.tfOpen) return
+        const old = this.tfChipW || []
+        for (let i = 0; i < old.length; i++) {
+          try {
+            deleteWidget(old[i])
+          } catch (e) {}
+          const idx = this.tfW.indexOf(old[i])
+          if (idx >= 0) this.tfW.splice(idx, 1)
+        }
+        this.tfChipW = this.createTfChips()
+      }, 120)
     },
 
     closeTimeframe() {
@@ -1371,9 +1667,16 @@ Page(
       let next = Math.round((Number(this.calRef) + Number(delta)) * 10) / 10
       if (next < 1) next = 1
       if (next > 30) next = 30
+      if (next === this.calRef) {
+        showToast({ text: 'Limit reached' })
+        return
+      }
       this.calRef = next
       try {
-        if (this.calRefW) deleteWidget(this.calRefW)
+        if (this.calRefW) {
+          this.calRefW.setProperty(prop.TEXT, fmtMmol(this.calRef))
+          return
+        }
       } catch (e) {}
       this.calRefW = createWidget(widget.TEXT, {
         ...CAL_REF,
@@ -1466,6 +1769,14 @@ Page(
       this.closeAlarms(false)
       this.closeCalibrate()
       this.closeInfo()
+      this.closeConfirm(false)
+      // The Nearby list lives in overlayW; only the flag needs resetting.
+      this.nearbyOpen = false
+      this.nearbyW = null
+      if (this.rowTapTimer) {
+        clearTimeout(this.rowTapTimer)
+        this.rowTapTimer = null
+      }
       const list = this.overlayW || []
       this.overlayW = []
       this.menuListW = null
@@ -1480,7 +1791,10 @@ Page(
     },
 
     sendLog() {
-      if (this.sendingLog) return
+      if (this.sendingLog) {
+        showToast({ text: 'Already sending' })
+        return
+      }
       if (!this.request) {
         showToast({ text: 'Phone not connected' })
         return
@@ -1496,6 +1810,7 @@ Page(
       const CHUNK = 3500
       const total = Math.ceil(text.length / CHUNK) || 1
       this.sendingLog = true
+      showToast({ text: 'Sending log…' })
       const send = (part) => {
         const start = part * CHUNK
         this.request({
@@ -1546,8 +1861,10 @@ Page(
             (sensor.serial || 'sensor') +
             ' · patch ' +
             sensor.patchInfoHex +
-            (source ? ' · ' + source : '')
+            (source ? ' · ' + source : '') +
+            (getUserStopped() ? ' · tap Connect' : '')
         })
+        if (this.settingsOpen) this.refreshMenu()
       } catch (e) {
         if (force) showToast({ text: (e && e.message) || 'Invalid JSON' })
       }
@@ -1816,9 +2133,11 @@ Page(
     },
 
     setConnected(on) {
+      const changed = this.connected !== on
       this.connected = on
       if (on && this.clearRelaunchTimer) this.clearRelaunchTimer()
       if (!this.uiPaused) this.updateStatusDot()
+      if (changed && this.settingsOpen && this.menuListW) this.refreshMenu()
     },
 
     updateClock() {

@@ -54,6 +54,7 @@ const BLE_CONNECT_ID_KEY = 'libreBleConnectId'
 const BLE_STUCK_RUNS_KEY = 'libreBleStuckRuns'
 const BLE_PIDS_KEY = 'libreBlePids'
 const NOTICE_KEY = 'libreNoticeOk'
+const USER_STOPPED_KEY = 'libreUserStopped'
 const BLE_PIDS_MAX = 8
 
 export function getHypoMmol() {
@@ -438,7 +439,8 @@ function emptyLive() {
     pageClosedAt: 0,
     unlockRejectedAt: 0,
     bleStuckAt: 0,
-    advertPhase: -1
+    advertPhase: -1,
+    stopped: false
   }
 }
 
@@ -458,6 +460,7 @@ function parseLive(raw) {
     return {
       parsed: !!(o && typeof o === 'object'),
       wanted: !!(o && o.wanted),
+      stopped: !!(o && o.stopped),
       at: Number.isFinite(at) && at > 0 ? at : 0,
       mmol: Number.isFinite(mmol) && mmol > 0 ? mmol : 0,
       rawMmol: Number.isFinite(rawMmol) && rawMmol > 0 ? rawMmol : 0,
@@ -885,6 +888,18 @@ export function getSessionWanted() {
 export function setSessionWanted(on) {
   store.setItem(WANTED_KEY, on ? '1' : '0')
   ensureLiveState().wanted = !!on
+  writeLiveFile()
+}
+
+/** The user pressed Disconnect: no auto-connect, relaunch or service until Connect. */
+export function getUserStopped() {
+  return store.getItem(USER_STOPPED_KEY) === '1'
+}
+
+export function setUserStopped(on) {
+  store.setItem(USER_STOPPED_KEY, on ? '1' : '0')
+  // The app-service reads the live file, not this store.
+  ensureLiveState().stopped = !!on
   writeLiveFile()
 }
 

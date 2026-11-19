@@ -398,6 +398,11 @@ export function createSensorClient(initialHooks) {
   let loginQuietUntil = 0
   let lastBle = 'no BLE yet'
   let lastPacketAt = 0
+  // A "disconnected" callback ignored as fake while live. In traces every
+  // one was a real drop, so the next minute tick uses a shorter quiet limit.
+  let dropSuspectAt = 0
+  // RSSI of the advert the current connect came from (null = unknown).
+  let lastAdvertRssi = null
   let wdGraceUntil = 0
   let advertPhaseMs = -1
   let phaseLoaded = false
@@ -450,6 +455,11 @@ export function createSensorClient(initialHooks) {
   // Live frames arrive ~every 60s. 75s is enough slack to reconnect faster
   // than the 90s post-login window (first F002 can take 60–90s).
   const LIVE_QUIET_MS = 75000
+  // After an ignored "disconnected": the tick at :00 sees ~55s since the
+  // last packet, so this catches the drop one advert slot earlier.
+  const DROP_SUSPECT_QUIET_MS = 45000
+  // Logins that fail at this signal or weaker are range, not a stuck stack.
+  const WEAK_RSSI = -95
   // Treat the stream as stale after 330s (about 11 missed minutes).
   const LIVE_STALE_MS = 330000
   // Do not reconnect an ACL younger than 60s.
@@ -462,6 +472,7 @@ export function createSensorClient(initialHooks) {
   // (only a reboot clears it). Slow the retry so the radio and wake lock rest.
   const PREPARE_STUCK_N = 5
   const PREPARE_STUCK_RETRY_MS = 180000
+  const PREPARE_STUCK_SETTLE_MS = 20000
   const LIVE_MAC_FAILS_MAX = 2
   // Notify is up and the unlock is written, but no frame arrives. After an
   // NFC re-scan the sensor ignores the old payload; stop burning counts.
@@ -606,7 +617,8 @@ export function createSensorClient(initialHooks) {
       handshakeAt = 0
       retryDueAt = Date.now() + delayMs
       if (hooks.onKeepAwake) hooks.onKeepAwake(false)
-      status('Link stuck, retry in 3 min')
+      const mins = Math.round(delayMs / 60000)
+      status('Link stuck, retry in ' + (mins >= 1 ? mins + ' min' : '<1 min'))
       later(delayMs, start)
       return
     }
@@ -679,7 +691,16 @@ export function createSensorClient(initialHooks) {
         ble.destroyProfile()
       } catch (e) {}
     }
-    prepareFails++
+    // A sensor drop mid-login at the edge of range is not a stuck stack:
+    // retry every slot instead of counting toward the 3-minute backoff.
+    const weak = !buildFalse && lastAdvertRssi != null && lastAdvertRssi <= WEAK_RSSI
+    if (weak) {
+      try {
+        trace('prepare-weak rssi=' + lastAdvertRssi)
+      } catch (e) {}
+    } else {
+      prepareFails++
+    }
     if (buildFalse && !prepareOk) {
       buildFalseStreak++
       if (buildFalseStreak >= 2) {
@@ -722,7 +743,18 @@ export function createSensorClient(initialHooks) {
           } catch (e) {}
         }
         nativeReset('prepare-stuck', { freeAll: true })
-        rebootBle(false, PREPARE_STUCK_RETRY_MS)
+        // First stuck run: settle at least 20s, then scan in time for the
+        // next advert. A fixed 3 minutes skipped three readings.
+        let wait = PREPARE_STUCK_RETRY_MS
+        if (runs <= 1) {
+          wait = phaseKnown()
+            ? Math.max(PREPARE_STUCK_SETTLE_MS, nextSlotDelay(Date.now()) - SLOT_LEAD_MS)
+            : 60000
+          try {
+            trace('prepare-stuck retry ' + Math.round(wait / 1000) + 's')
+          } catch (e) {}
+        }
+        rebootBle(false, wait)
         return
       }
       rebootBle(true)
@@ -826,11 +858,17 @@ export function createSensorClient(initialHooks) {
         }
         if (!connecting && gotGlucose && lastPacketAt && (linkUp || !retryDueAt)) {
           const quiet = now - lastPacketAt
-          const limit = now < wdGraceUntil ? LIVE_QUIET_MS + 60000 : LIVE_QUIET_MS
+          const suspect = dropSuspectAt > lastPacketAt
+          const limit = suspect
+            ? DROP_SUSPECT_QUIET_MS
+            : now < wdGraceUntil
+              ? LIVE_QUIET_MS + 60000
+              : LIVE_QUIET_MS
           if (quiet >= limit) {
             try {
-              trace('wd live-quiet ' + Math.round(quiet / 1000) + 's')
+              trace((suspect ? 'wd drop-quiet ' : 'wd live-quiet ') + Math.round(quiet / 1000) + 's')
             } catch (e) {}
+            dropSuspectAt = 0
             reconnectQuietStream()
             return
           }
@@ -914,6 +952,7 @@ export function createSensorClient(initialHooks) {
     loginQuietUntil = 0
     lastBle = 'no BLE yet'
     lastPacketAt = 0
+    dropSuspectAt = 0
     prepareOk = false
     hadLive = false
     preferScan = false
@@ -946,6 +985,8 @@ export function createSensorClient(initialHooks) {
     retryDueAt = 0
     unlockAt = 0
     burstTries = 0
+    // Set again by the advert this connect finds; a MAC-first connect has none.
+    lastAdvertRssi = null
     handshakeAt = Date.now()
     if (hooks.onKeepAwake) hooks.onKeepAwake(true)
     linkUp = false
@@ -1109,6 +1150,7 @@ export function createSensorClient(initialHooks) {
     if (lastLiveMac) setLiveMac(lastLiveMac)
     if (hooks.onKeepAwake) hooks.onKeepAwake(false)
     lastPacketAt = now
+    dropSuspectAt = 0
     loginQuietUntil = now + LOGIN_QUIET_MS
     retries = 0
     retryStartedAt = now
@@ -1620,6 +1662,7 @@ export function createSensorClient(initialHooks) {
       }
       if (freshLive && radioIsUp(ble) && age < QUIET_NOTIFY_MS) {
         connecting = false
+        dropSuspectAt = Date.now()
         try {
           trace('dc-ignore age=' + Math.round(age / 1000) + 's')
         } catch (e) {}
@@ -1982,6 +2025,8 @@ export function createSensorClient(initialHooks) {
       kpiAdvertAt = Date.now()
       rememberPhase(kpiAdvertAt)
       const rssi = device.rssi != null ? device.rssi : device.RSSI
+      const rssiN = Number(rssi)
+      lastAdvertRssi = rssi != null && Number.isFinite(rssiN) ? rssiN : null
       const scanS = Math.round((kpiAdvertAt - startedAt) / 1000)
       try {
         trace(
@@ -2136,6 +2181,7 @@ export function createSensorClient(initialHooks) {
   }
 
   function parkLink() {
+    dropSuspectAt = 0
     connecting = false
     linkUp = false
     unlockSent = false
@@ -2181,6 +2227,7 @@ export function createSensorClient(initialHooks) {
       lastLiveMac = getLiveMac()
       needsNfc = false
       lastPacketAt = 0
+      dropSuspectAt = 0
       connectTime = 0
       clearRetry()
       ensureWatchdog()
@@ -2213,6 +2260,27 @@ export function createSensorClient(initialHooks) {
     },
     disconnect() {
       drop('Disconnected')
+    },
+    /** User Disconnect: drop the link and stop every timer, scan and watchdog. */
+    stop() {
+      try {
+        haltScan()
+      } catch (e) {}
+      drop('Disconnected')
+      if (timeSensor) {
+        try {
+          if (timeSensor.offPerMinute) {
+            timeSensor.offPerMinute(wdMinuteCb)
+            timeSensor.offPerMinute()
+          }
+        } catch (e) {}
+        timeSensor = null
+        wdMinuteCb = null
+      }
+      hooks = {}
+      try {
+        trace('stopped by user')
+      } catch (e) {}
     },
     detach() {
       // Leave scan, connect, GATT, and login running. Page destroy must not

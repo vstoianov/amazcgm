@@ -5,8 +5,8 @@
     "appName": "AmazCGM",
     "appType": "app",
     "version": {
-      "code": 199,
-      "name": "1.8.5"
+      "code": 200,
+      "name": "1.8.6-rc"
     },
     "icon": "icon.png",
     "vender": "vstoianov",

@@ -175,6 +175,16 @@ AppService({
       } catch (e) {}
 
       const parsed = !!(rawLive && rawLive.parsed)
+      if (parsed && rawLive.stopped) {
+        // Disconnect in Settings: no relaunch, no alerts, until Connect.
+        try {
+          trace('svc exit user-stopped')
+        } catch (e) {}
+        try {
+          exit()
+        } catch (e) {}
+        return
+      }
       let live = rawLive
       if (!parsed) {
         if (this.state.lastGoodLive) {

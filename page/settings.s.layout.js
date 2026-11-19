@@ -9,7 +9,22 @@ const COLORS = {
   accent: 0x4fc3f7,
   button: 0x1b6b7a,
   card: 0x121c20,
-  cardHi: 0x1a2a32
+  cardHi: 0x1a2a32,
+  // Pressed state: clearly lighter than card/cardHi so a tap is visible.
+  press: 0x2f5563,
+  buttonPress: 0x34a0b4,
+  pressAccent: 0x9be0ff,
+  danger: 0x7a2b2b,
+  dangerPress: 0xb04444
+}
+
+/** Menu row colours: background, pressed background, label. */
+const ROW_TONES = {
+  normal: { bg: COLORS.card, press: COLORS.press, label: COLORS.text },
+  // Disconnect: red, so it reads as "this breaks the sensor link".
+  danger: { bg: 0x5a1f1f, press: 0x9a3a3a, label: 0xff8a80 },
+  // Connect: green.
+  go: { bg: 0x174a35, press: 0x2e8a5f, label: 0x8ff0b8 }
 }
 
 // Round screens: content column narrower, title and Back button moved in
@@ -54,7 +69,7 @@ function backButton(y) {
     h: BACK_H,
     radius: Math.round(BACK_H / 2),
     normal_color: COLORS.cardHi,
-    press_color: COLORS.card,
+    press_color: COLORS.press,
     text: 'Back',
     text_size: sp(24),
     color: COLORS.text
@@ -92,28 +107,25 @@ export const MENU_LIST = {
 export const MENU_ITEM_H = Math.round(H * 0.175)
 export const MENU_ITEM_SPACE = sp(12)
 
-export const MENU_ITEMS = [
-  { label: 'Sync from phone', sub: 'Bluetooth from AmazCGM for Android' },
-  { label: 'Chart range', sub: '3 hours' },
-  { label: 'Alarms', sub: '3.9 – 10.0 mmol/L' },
-  { label: 'Calibrate', sub: 'Blood glucose ref' },
-  { label: 'Info', sub: 'Sensor & status' },
-  { label: 'Send log', sub: 'Diagnostics' },
-  { label: 'Back', sub: 'Return to chart' }
-]
-
+/**
+ * Settings menu rows. `id` drives the click; the session rows change with
+ * the connection state (Disconnect + Reconnect while on, Connect while off).
+ */
 export function buildMenuItems(meta) {
   const m = meta || {}
-  return [
-    { label: 'Sync from phone', sub: m.syncSub || 'Bluetooth from AmazCGM for Android' },
-    { label: 'Chart range', sub: m.rangeSub || '3 hours' },
-    { label: 'Alarms', sub: m.alarmsSub || '3.9 – 10.0 mmol/L' },
-    { label: 'Calibrate', sub: m.calSub || 'Blood glucose ref' },
-    { label: 'Info', sub: m.infoSub || 'Sensor & status' },
-    { label: 'Send log', sub: 'Diagnostics' },
-    { label: 'Nearby devices', sub: m.nearbySub || 'Seen by the last sync' },
-    { label: 'Back', sub: 'Return to chart' }
-  ]
+  const session = m.sessionOn
+    ? [{ id: 'disconnect', tone: 'danger', label: 'Disconnect', sub: m.linkSub || 'Stop the sensor link' }]
+    : [{ id: 'connect', tone: 'go', label: 'Connect', sub: m.connectSub || 'No sensor · sync first' }]
+  return session.concat([
+    { id: 'sync', label: 'Sync from phone', sub: m.syncSub || 'Bluetooth from AmazCGM for Android' },
+    { id: 'range', label: 'Chart range', sub: m.rangeSub || '3 hours' },
+    { id: 'alarms', label: 'Alarms', sub: m.alarmsSub || '3.9 – 10.0 mmol/L' },
+    { id: 'cal', label: 'Calibrate', sub: m.calSub || 'Blood glucose ref' },
+    { id: 'info', label: 'Info', sub: m.infoSub || 'Sensor & status' },
+    { id: 'log', label: 'Send log', sub: 'Diagnostics' },
+    { id: 'nearby', label: 'Nearby devices', sub: m.nearbySub || 'Seen by the last sync' },
+    { id: 'back', label: 'Back', sub: 'Return to chart' }
+  ])
 }
 
 /** Rows for the "Nearby devices" screen; the last row returns to the menu. */
@@ -126,77 +138,94 @@ export function nearbyItems(sample) {
       (d.phase ? ' · p' + d.phase : '')
   }))
   if (!rows.length) rows.push({ label: 'Nothing seen', sub: 'Run Sync from phone first' })
-  rows.push({ label: 'Back', sub: 'Return to menu' })
+  rows.push({ id: 'back', label: 'Back', sub: 'Return to menu' })
   return rows
 }
 
-export function menuListProps(onClick, items) {
-  const data = items && items.length ? items : MENU_ITEMS
-  const labelH = Math.round(MENU_ITEM_H * 0.52)
-  const subH = MENU_ITEM_H - labelH - sp(8)
+const ROW_LABEL_H = Math.round(MENU_ITEM_H * 0.52)
+const ROW_SUB_H = MENU_ITEM_H - ROW_LABEL_H - sp(8)
+const ROW_RADIUS = sp(26)
+
+/**
+ * One menu row inside the scrolling container (coordinates are relative to
+ * the container). `hit` is a transparent text layer on top that takes the
+ * touch, so the background can show a pressed colour (SCROLL_LIST has none).
+ */
+export function menuRow(i, tone) {
+  const y = i * (MENU_ITEM_H + MENU_ITEM_SPACE)
+  const w = MENU_LIST.w
+  const t = ROW_TONES[tone] || ROW_TONES.normal
   return {
-    x: MENU_LIST.x,
-    y: MENU_LIST.y,
-    w: MENU_LIST.w,
-    h: MENU_LIST.h,
-    item_space: MENU_ITEM_SPACE,
-    item_config: [
-      {
-        type_id: 1,
-        item_height: MENU_ITEM_H,
-        item_bg_color: COLORS.card,
-        item_bg_radius: sp(26),
-        text_view: [
-          {
-            x: sp(18),
-            y: sp(6),
-            w: MENU_LIST.w - sp(36),
-            h: labelH,
-            key: 'label',
-            color: COLORS.text,
-            text_size: sp(26),
-            align_h: align.CENTER_H,
-            align_v: align.BOTTOM
-          },
-          {
-            x: sp(18),
-            y: labelH + sp(2),
-            w: MENU_LIST.w - sp(36),
-            h: subH,
-            key: 'sub',
-            color: COLORS.muted,
-            text_size: sp(18),
-            align_h: align.CENTER_H,
-            align_v: align.TOP
-          }
-        ],
-        text_view_count: 2
-      }
-    ],
-    item_config_count: 1,
-    data_array: data,
-    data_count: data.length,
-    data_type_config: [
-      {
-        start: 0,
-        end: data.length - 1,
-        type_id: 1
-      }
-    ],
-    data_type_config_count: 1,
-    item_click_func: onClick
+    normalColor: t.bg,
+    pressColor: t.press,
+    bg: { x: 0, y: y, w: w, h: MENU_ITEM_H, radius: ROW_RADIUS, color: t.bg },
+    label: {
+      x: sp(18),
+      y: y + sp(6),
+      w: w - sp(36),
+      h: ROW_LABEL_H,
+      color: t.label,
+      text_size: sp(26),
+      align_h: align.CENTER_H,
+      align_v: align.BOTTOM,
+      text: ''
+    },
+    sub: {
+      x: sp(18),
+      y: y + ROW_LABEL_H + sp(2),
+      w: w - sp(36),
+      h: ROW_SUB_H,
+      color: COLORS.muted,
+      text_size: sp(18),
+      align_h: align.CENTER_H,
+      align_v: align.TOP,
+      text: ''
+    },
+    hit: { x: 0, y: y, w: w, h: MENU_ITEM_H, color: t.bg, text_size: sp(10), text: '' }
   }
 }
 
+/** Scroll height for n rows, with room to pull the last row clear of a round edge. */
+export function menuContentH(n) {
+  return n * (MENU_ITEM_H + MENU_ITEM_SPACE) + (ROUND ? Math.round(H * 0.12) : sp(12))
+}
+
+/** A finger that moved further than this between down and up was scrolling. */
+export const TAP_SLOP = sp(14)
+
+// Disconnect confirmation
+export const CONFIRM_TITLE = screenTitle('Disconnect?')
+const CONFIRM_OK_Y = BACK_Y - BACK_H - sp(14)
+export const CONFIRM_TEXT = {
+  x: INSET_X,
+  y: TITLE_Y + TITLE_H + sp(8),
+  w: CONTENT_W,
+  h: CONFIRM_OK_Y - (TITLE_Y + TITLE_H + sp(8)) - sp(10),
+  color: COLORS.text,
+  text_size: sp(22),
+  align_h: align.CENTER_H,
+  align_v: align.CENTER_V,
+  text_style: text_style.WRAP,
+  text:
+    'Readings, alarms and background reconnects stop until you tap Connect.'
+}
+export const CONFIRM_OK_BTN = {
+  ...backButton(CONFIRM_OK_Y),
+  normal_color: COLORS.danger,
+  press_color: COLORS.dangerPress,
+  text: 'Disconnect'
+}
+export const CONFIRM_CANCEL_BTN = { ...backButton(), text: 'Cancel' }
+
 export const CHIP_ON = {
   normal_color: COLORS.accent,
-  press_color: 0x3aa8d4,
+  press_color: COLORS.pressAccent,
   color: 0x081418
 }
 
 export const CHIP_OFF = {
   normal_color: COLORS.card,
-  press_color: COLORS.cardHi,
+  press_color: COLORS.press,
   color: COLORS.text
 }
 
@@ -325,7 +354,7 @@ function calStep(i, text, delta) {
     h: STEP_H,
     radius: sp(18),
     normal_color: COLORS.card,
-    press_color: COLORS.cardHi,
+    press_color: COLORS.press,
     text: text,
     text_size: sp(23),
     color: COLORS.text,
@@ -351,7 +380,7 @@ export const CAL_SAVE_BTN = {
   h: CAL_ACT_H,
   radius: Math.round(CAL_ACT_H / 2),
   normal_color: COLORS.button,
-  press_color: 0x145560,
+  press_color: COLORS.buttonPress,
   text: 'Save',
   text_size: sp(23),
   color: COLORS.text
@@ -364,7 +393,7 @@ export const CAL_CLEAR_BTN = {
   h: CAL_ACT_H,
   radius: Math.round(CAL_ACT_H / 2),
   normal_color: COLORS.card,
-  press_color: COLORS.cardHi,
+  press_color: COLORS.press,
   text: 'Clear cal',
   text_size: sp(23),
   color: COLORS.text
@@ -401,7 +430,7 @@ function alarmStep(i, text, delta, y) {
     h: ALARM_ROW_H,
     radius: sp(22),
     normal_color: COLORS.card,
-    press_color: COLORS.cardHi,
+    press_color: COLORS.press,
     text: text,
     text_size: sp(26),
     color: COLORS.text,
@@ -461,7 +490,7 @@ function alarmSection(top, label) {
       h: ALARM_ROW_H,
       radius: sp(22),
       normal_color: COLORS.card,
-      press_color: COLORS.cardHi,
+      press_color: COLORS.press,
       text: '−',
       text_size: sp(32),
       color: COLORS.text
@@ -484,7 +513,7 @@ function alarmSection(top, label) {
       h: ALARM_ROW_H,
       radius: sp(22),
       normal_color: COLORS.card,
-      press_color: COLORS.cardHi,
+      press_color: COLORS.press,
       text: '+',
       text_size: sp(32),
       color: COLORS.text
@@ -502,7 +531,7 @@ export const ALARM_TEST_BTN = {
   h: ALARM_ROW_H,
   radius: sp(24),
   normal_color: COLORS.button,
-  press_color: COLORS.cardHi,
+  press_color: COLORS.buttonPress,
   text: 'Test sound',
   text_size: sp(25),
   color: COLORS.text
@@ -515,7 +544,7 @@ export const ALARM_BACK_BTN = {
   h: ALARM_ROW_H,
   radius: sp(24),
   normal_color: COLORS.cardHi,
-  press_color: COLORS.card,
+  press_color: COLORS.press,
   text: 'Back',
   text_size: sp(26),
   color: COLORS.text

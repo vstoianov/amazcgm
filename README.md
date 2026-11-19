@@ -117,6 +117,7 @@ Maintainers: see [RELEASING.md](RELEASING.md) for how to publish a release.
 - Battery of the **Amazfit Bip Max** last about 8-9 days with a reading every minute.
 - Bluetooth on the Bip Max sometimes gets stuck after many hours. AmazCGM detects this, rebuilds the connection and, if that fails, tells you to restart the watch.
 - When the sensor ends (after 15 days) or is replaced, scan the new one with AmazCGM for Android, paste the new JSON in Zepp and tap **Sync from phone** on the watch.
+- The red **Disconnect** item at the top of the menu stops the sensor link and the background service; the watch then stays disconnected, also after a restart, and the item turns into a green **Connect** until you tap it. To switch to a new sensor while disconnected, tap **Sync from phone**, then **Connect**.
 - Readings stop while the watch is out of Bluetooth range of the sensor, which is usually a few metres.
 
 ## Reporting a problem
