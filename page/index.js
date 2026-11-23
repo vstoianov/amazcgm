@@ -57,6 +57,7 @@ import {
   CHART_TAP,
   COLORS,
   glucoseColor,
+  sp,
   W,
   H
 } from './index.s.layout.js'
@@ -164,6 +165,25 @@ import { parseScanJson, scanFingerprint, scanFingerprintFromText } from '../shar
 import { flushTrace, readTraceTail, resetTraceSession, trace } from '../shared/trace'
 import { pullScanOverBle } from '../shared/phone-link'
 import { crc32, utf8Bytes } from '../shared/crypto'
+import {
+  FACE_DATE,
+  FACE_TIME,
+  FACE_GLUCOSE,
+  FACE_GLU_SIZE,
+  FACE_TREND,
+  FACE_TREND_SIZE,
+  FACE_TREND_GAP,
+  FACE_SUB,
+  FACE_BAT_BODY,
+  FACE_BAT_CAVITY,
+  FACE_BAT_FILL,
+  FACE_BAT_FILL_MAX,
+  FACE_BAT_NUB,
+  FACE_BAT_PCT,
+  FACE_TAP,
+  textWidth,
+  fmtFaceDate
+} from './face.layout.js'
 
 function fmtMmol(mmol) {
   if (!mmol) return '—'
@@ -294,11 +314,28 @@ function setText(w, text, color) {
   } catch (e) {}
 }
 
-function replaceTextWidget(oldW, layout, text, color) {
+// Every widget of the detail view (chart screen) is created through
+// mkDetail so showFace() can delete the whole view at once.
+let detailSink = []
+
+function mkDetail(type, props) {
+  const w = createWidget(type, props)
+  if (w) detailSink.push(w)
+  return w
+}
+
+function delDetail(w) {
+  if (!w) return
+  const i = detailSink.indexOf(w)
+  if (i >= 0) detailSink.splice(i, 1)
   try {
-    if (oldW) deleteWidget(oldW)
+    deleteWidget(w)
   } catch (e) {}
-  return createWidget(widget.TEXT, {
+}
+
+function replaceTextWidget(oldW, layout, text, color) {
+  delDetail(oldW)
+  return mkDetail(widget.TEXT, {
     ...layout,
     text: text,
     color: color != null ? color : layout.color
@@ -306,17 +343,17 @@ function replaceTextWidget(oldW, layout, text, color) {
 }
 
 function replaceTrendImg(oldW, src) {
-  try {
-    if (oldW) deleteWidget(oldW)
-  } catch (e) {}
+  delDetail(oldW)
   if (!src) return null
-  return createWidget(widget.IMG, {
+  return mkDetail(widget.IMG, {
     ...TREND_IMG,
     src: src
   })
 }
 
 const STALE_GRAY_MS = 3 * 60 * 1000
+// The chart screen falls back to the watch face after this long untouched.
+const FACE_IDLE_MS = 30000
 
 function liveAgeText(at) {
   if (!at) return 'Live'
@@ -502,6 +539,10 @@ Page(
                 this.closeSettings()
                 return true
               }
+              if (this.view === 'detail') {
+                this.showFace()
+                return true
+              }
               return false
             }
             return false
@@ -514,16 +555,9 @@ Page(
       try {
         setStatusBarVisible(false)
       } catch (e) {}
-      this.clockW = createWidget(widget.TEXT, {
-        ...CLOCK,
-        text: fmtClock(Date.now())
-      })
-      this.lastClockText = fmtClock(Date.now())
-      this.batteryBodyW = createWidget(widget.FILL_RECT, BATTERY_BODY)
-      this.batteryCavityW = createWidget(widget.FILL_RECT, BATTERY_CAVITY)
-      this.batteryLevelW = createWidget(widget.FILL_RECT, BATTERY_FILL)
-      this.batteryNubW = createWidget(widget.FILL_RECT, BATTERY_NUB)
-      this.batteryPctW = createWidget(widget.TEXT, BATTERY_PCT)
+      // Opens on the watch face; a tap on the glucose builds the detail view.
+      this.view = 'face'
+      this.buildFace()
       try {
         this.battery = new Battery()
         this.onBatteryChange = () => this.paintBattery()
@@ -532,50 +566,7 @@ Page(
         this.battery = null
       }
       this.paintBattery()
-      this.glucoseW = createWidget(widget.TEXT, GLUCOSE)
-      this.trendW = null
-      this.unitW = createWidget(widget.TEXT, UNIT_FALLBACK)
-      this.deltaW = createWidget(widget.TEXT, DELTA)
-      this.initChart()
-      this.statusW = createWidget(widget.TEXT, STATUS)
-      this.glanceTap = createWidget(widget.TEXT, {
-        ...GLANCE_TAP,
-        click_func: () => {
-          if (this.settingsOpen) return
-          this.refreshGlance()
-        }
-      })
-      try {
-        if (this.glanceTap && event && this.glanceTap.addEventListener) {
-          this.glanceTap.addEventListener(event.CLICK_UP, () => {
-            if (this.settingsOpen) return
-            this.refreshGlance()
-          })
-        }
-      } catch (e) {}
-      const tapGear = () => {
-        if (this.settingsOpen) return
-        this.openSettings()
-      }
-      this.gearTap = createWidget(widget.TEXT, {
-        ...GEAR_TAP,
-        click_func: tapGear
-      })
-      try {
-        if (this.gearTap && event && this.gearTap.addEventListener) {
-          this.gearTap.addEventListener(event.CLICK_UP, tapGear)
-        }
-      } catch (e) {}
-      this.gearBtn = createWidget(widget.IMG, {
-        ...GEAR_IMG,
-        click_func: tapGear
-      })
-      try {
-        if (this.gearBtn && event && this.gearBtn.addEventListener) {
-          this.gearBtn.addEventListener(event.CLICK_UP, tapGear)
-        }
-      } catch (e) {}
-      this.updateStatusDot()
+      this.chartBackMs = 0
 
       const last = loadLastReading()
       const hist = seedHistory(last)
@@ -636,6 +627,7 @@ Page(
       try {
         accepted = getNoticeAccepted()
       } catch (e) {}
+      this.paintFace()
       if (!accepted) this.showNotice()
     },
 
@@ -675,6 +667,337 @@ Page(
       this.settingsOpen = false
     },
 
+    /** Face widgets: created once, updated in place, hidden in detail view. */
+    buildFace() {
+      const now = Date.now()
+      const mk = (type, props) => {
+        try {
+          return createWidget(type, props)
+        } catch (e) {
+          return null
+        }
+      }
+      this.faceDateW = mk(widget.TEXT, { ...FACE_DATE, text: fmtFaceDate(now) })
+      this.faceTimeW = mk(widget.TEXT, { ...FACE_TIME, text: fmtClock(now) })
+      this.faceGluW = mk(widget.TEXT, FACE_GLUCOSE)
+      this.faceTrendW = mk(widget.IMG, FACE_TREND)
+      try {
+        if (this.faceTrendW) this.faceTrendW.setProperty(prop.VISIBLE, false)
+      } catch (e) {}
+      this.faceSubW = mk(widget.TEXT, FACE_SUB)
+      this.faceBatBodyW = mk(widget.FILL_RECT, FACE_BAT_BODY)
+      this.faceBatCavityW = mk(widget.FILL_RECT, FACE_BAT_CAVITY)
+      this.faceBatFillW = mk(widget.FILL_RECT, FACE_BAT_FILL)
+      this.faceBatNubW = mk(widget.FILL_RECT, FACE_BAT_NUB)
+      this.faceBatPctW = mk(widget.TEXT, FACE_BAT_PCT)
+      // Created last so it sits on top of the glucose and the arrow.
+      const tap = () => {
+        if (this.settingsOpen || this.view !== 'face') return
+        this.showDetail()
+      }
+      this.faceTapW = mk(widget.TEXT, { ...FACE_TAP, click_func: tap })
+      try {
+        if (this.faceTapW && event && this.faceTapW.addEventListener) {
+          this.faceTapW.addEventListener(event.CLICK_UP, tap)
+        }
+      } catch (e) {}
+      this.faceW = [
+        this.faceDateW,
+        this.faceTimeW,
+        this.faceGluW,
+        this.faceSubW,
+        this.faceBatBodyW,
+        this.faceBatCavityW,
+        this.faceBatFillW,
+        this.faceBatNubW,
+        this.faceBatPctW,
+        this.faceTapW
+      ].filter((w) => !!w)
+      this.lastFaceClock = ''
+      this.lastFaceArrow = null
+    },
+
+    setFaceVisible(on) {
+      const list = this.faceW || []
+      for (let i = 0; i < list.length; i++) {
+        try {
+          list[i].setProperty(prop.VISIBLE, !!on)
+        } catch (e) {}
+      }
+      // The arrow has its own visibility (hidden without a trend).
+      this.lastFaceArrow = null
+      this.lastFaceKey = null
+      if (!on && this.faceTrendW) {
+        try {
+          this.faceTrendW.setProperty(prop.VISIBLE, false)
+        } catch (e) {}
+      }
+    },
+
+    /** Text and colours for the current reading, shared by both views. */
+    readingView() {
+      const mmol = this.lastMmol || 0
+      const err = !!this.lastHasError
+      const stale = this.isStale()
+      const ageMin =
+        this.lastAt ? Math.max(0, Math.floor((Date.now() - this.lastAt) / 60000)) : 0
+      const zoneColor = err ? COLORS.bad : glucoseColor(mmol)
+      const color = stale ? COLORS.muted : zoneColor
+      const text = err ? 'err' : fmtMmol(mmol)
+      const trend = err || !mmol ? { arrow: '', delta: '' } : trendFromHistory(mmol, this.lastAt)
+      const arrowSrc = trend.arrow ? trendSrc(trend.arrow, trendColorKey(zoneColor)) : ''
+      return { mmol, err, stale, ageMin, zoneColor, color, text, trend, arrowSrc }
+    },
+
+    paintFace() {
+      if (this.view !== 'face' || this.uiPaused) return
+      this.paintFaceClock()
+      // The 10s poll repaints too; skip when nothing visible changed.
+      const ageMin = this.lastAt ? Math.floor((Date.now() - this.lastAt) / 60000) : -1
+      const key = [
+        this.lastMmol,
+        this.lastAt,
+        this.lastHasError ? 1 : 0,
+        ageMin,
+        this.lastLog,
+        getSessionWanted() ? 1 : 0,
+        getUserStopped() ? 1 : 0
+      ].join('|')
+      if (key === this.lastFaceKey) return
+      this.lastFaceKey = key
+      const v = this.readingView()
+      // Minimal look: white in range, zone colour only when out of range.
+      let gluColor = v.color
+      if (!v.stale && !v.err && v.zoneColor === COLORS.ok) gluColor = COLORS.text
+      const arrow = v.stale ? '' : v.arrowSrc
+      const textW = textWidth(v.text, FACE_GLU_SIZE)
+      const groupW = textW + (arrow ? FACE_TREND_GAP + FACE_TREND_SIZE : 0)
+      const x0 = Math.round((W - groupW) / 2)
+      const pad = sp(16)
+      try {
+        this.faceGluW.setProperty(prop.MORE, {
+          x: Math.max(0, x0 - pad),
+          y: FACE_GLUCOSE.y,
+          w: Math.min(W, textW + pad * 2),
+          h: FACE_GLUCOSE.h,
+          text: v.text,
+          color: gluColor
+        })
+      } catch (e) {
+        setText(this.faceGluW, v.text, gluColor)
+      }
+      const arrowKey = arrow ? arrow + '@' + (x0 + textW) : ''
+      if (this.faceTrendW && arrowKey !== this.lastFaceArrow) {
+        this.lastFaceArrow = arrowKey
+        const tw = this.faceTrendW
+        if (arrow) {
+          try {
+            tw.setProperty(prop.MORE, {
+              x: x0 + textW + FACE_TREND_GAP,
+              y: FACE_TREND.y,
+              w: FACE_TREND_SIZE,
+              h: FACE_TREND_SIZE,
+              src: arrow
+            })
+          } catch (e) {}
+          try {
+            if (prop.SRC != null) tw.setProperty(prop.SRC, arrow)
+          } catch (e) {}
+        }
+        try {
+          tw.setProperty(prop.VISIBLE, !!arrow)
+        } catch (e) {}
+      }
+      const sub = this.faceSubText(v)
+      setText(this.faceSubW, sub.text, sub.color)
+    },
+
+    faceSubText(v) {
+      const status = String(this.lastLog || '').split('\n')[0]
+      if (!getSessionWanted()) {
+        if (getUserStopped()) return { text: 'Disconnected', color: COLORS.muted }
+        if (!v.mmol) return { text: status || 'Not connected', color: COLORS.muted }
+      }
+      if (v.err) return { text: 'Sensor error', color: COLORS.warn }
+      if (!v.mmol) return { text: status || 'Connecting…', color: COLORS.muted }
+      if (v.stale) {
+        const age = v.ageMin + 'm ago'
+        const why = status && status.indexOf('Live') !== 0 ? '  ·  ' + status : ''
+        return { text: age + why, color: COLORS.warn }
+      }
+      const delta = String((v.trend && v.trend.delta) || '').split(' ')[0]
+      const age = v.ageMin < 1 ? 'now' : v.ageMin + ' min'
+      return { text: delta ? delta + '  ·  ' + age : age, color: COLORS.muted }
+    },
+
+    paintFaceClock() {
+      const now = Date.now()
+      const text = fmtClock(now)
+      if (text === this.lastFaceClock) return
+      this.lastFaceClock = text
+      setText(this.faceTimeW, text)
+      setText(this.faceDateW, fmtFaceDate(now))
+    },
+
+    /** Face → detail: build the chart screen on top of the hidden face. */
+    showDetail() {
+      if (this.view === 'detail') return
+      try {
+        trace('view detail')
+      } catch (e) {}
+      this.view = 'detail'
+      this.setFaceVisible(false)
+      this.buildDetail()
+      this.lastBatteryKey = ''
+      this.paintBattery()
+      this.refreshGlance()
+      this.updateStatusDot()
+      if (!this.lastMmol) {
+        try {
+          this.statusW.setProperty(prop.VISIBLE, true)
+        } catch (e) {}
+        setText(this.statusW, this.lastLog || STATUS.text)
+      }
+      this.armFaceTimer()
+    },
+
+    /** Detail → face: delete the whole detail view and show the face. */
+    showFace() {
+      if (this.view === 'face') return
+      try {
+        trace('view face')
+      } catch (e) {}
+      this.view = 'face'
+      this.clearFaceTimer()
+      this.destroyDetail()
+      this.setFaceVisible(true)
+      this.lastFaceClock = ''
+      this.lastBatteryKey = ''
+      this.paintBattery()
+      this.paintFace()
+    },
+
+    buildDetail() {
+      detailSink = []
+      this.clockW = mkDetail(widget.TEXT, { ...CLOCK, text: fmtClock(Date.now()) })
+      this.lastClockText = fmtClock(Date.now())
+      this.batteryBodyW = mkDetail(widget.FILL_RECT, BATTERY_BODY)
+      this.batteryCavityW = mkDetail(widget.FILL_RECT, BATTERY_CAVITY)
+      this.batteryLevelW = mkDetail(widget.FILL_RECT, BATTERY_FILL)
+      this.batteryNubW = mkDetail(widget.FILL_RECT, BATTERY_NUB)
+      this.batteryPctW = mkDetail(widget.TEXT, BATTERY_PCT)
+      this.glucoseW = mkDetail(widget.TEXT, GLUCOSE)
+      this.trendW = null
+      this.unitW = mkDetail(widget.TEXT, UNIT_FALLBACK)
+      this.deltaW = mkDetail(widget.TEXT, DELTA)
+      this.initChart()
+      this.statusW = mkDetail(widget.TEXT, STATUS)
+      this.glanceTap = null
+      this.raiseGlanceTap()
+      const tapGear = () => {
+        if (this.settingsOpen || this.view !== 'detail') return
+        this.openSettings()
+      }
+      this.gearTap = mkDetail(widget.TEXT, { ...GEAR_TAP, click_func: tapGear })
+      try {
+        if (this.gearTap && event && this.gearTap.addEventListener) {
+          this.gearTap.addEventListener(event.CLICK_UP, tapGear)
+        }
+      } catch (e) {}
+      this.gearBtn = mkDetail(widget.IMG, { ...GEAR_IMG, click_func: tapGear })
+      try {
+        if (this.gearBtn && event && this.gearBtn.addEventListener) {
+          this.gearBtn.addEventListener(event.CLICK_UP, tapGear)
+        }
+      } catch (e) {}
+      // Force a full repaint into the new widgets.
+      this.lastPaintAt = 0
+      this.lastPaintMmol = null
+      this.lastGlucoseText = null
+      this.lastTrendSrc = null
+      this.lastDeltaText = null
+      this.lastDeltaColor = null
+      this.dotColor = 0
+      this.chartDirty = false
+    },
+
+    /** Tapping the glucose on the chart screen returns to the watch face. */
+    onGlanceTap() {
+      if (this.settingsOpen || this.view !== 'detail') return
+      this.showFace()
+    },
+
+    /**
+     * (Re)creates the transparent glucose tap layer as the top-most widget.
+     * The glucose, arrow and delta widgets are recreated on repaint and
+     * would otherwise sit above it and swallow the tap.
+     */
+    raiseGlanceTap() {
+      if (this.view !== 'detail') return
+      delDetail(this.glanceTap)
+      const back = () => this.onGlanceTap()
+      this.glanceTap = mkDetail(widget.TEXT, { ...GLANCE_TAP, click_func: back })
+      try {
+        if (this.glanceTap && event && this.glanceTap.addEventListener) {
+          this.glanceTap.addEventListener(event.CLICK_UP, back)
+        }
+      } catch (e) {}
+    },
+
+    armFaceTimer() {
+      this.clearFaceTimer()
+      if (this.view !== 'detail') return
+      this.faceTimer = setTimeout(() => {
+        this.faceTimer = null
+        if (this.view !== 'detail' || this.settingsOpen || this.noticeOpen || this.uiPaused) return
+        try {
+          trace('face idle')
+        } catch (e) {}
+        this.showFace()
+      }, FACE_IDLE_MS)
+    },
+
+    clearFaceTimer() {
+      if (this.faceTimer) {
+        try {
+          clearTimeout(this.faceTimer)
+        } catch (e) {}
+        this.faceTimer = null
+      }
+    },
+
+    destroyDetail() {
+      const list = detailSink
+      detailSink = []
+      for (let i = 0; i < list.length; i++) {
+        try {
+          deleteWidget(list[i])
+        } catch (e) {}
+      }
+      this.clockW = null
+      this.batteryBodyW = null
+      this.batteryCavityW = null
+      this.batteryLevelW = null
+      this.batteryNubW = null
+      this.batteryPctW = null
+      this.glucoseW = null
+      this.trendW = null
+      this.unitW = null
+      this.deltaW = null
+      this.statusW = null
+      this.glanceTap = null
+      this.gearTap = null
+      this.gearBtn = null
+      this.dotW = null
+      this.dotHaloW = null
+      this.chartC = null
+      this.chartBg = null
+      this.chartBorderW = null
+      this.chartBars = []
+      this.scaleLabels = []
+      this.axisLabels = []
+    },
+
     ensurePoll() {
       if (this.poll) return
       this.poll = every(10000, () => this.syncFromStore())
@@ -684,6 +1007,15 @@ Page(
       this.uiPaused = false
       this.touchUiAlive()
       this.ensurePoll()
+      // The screen was off: always come back on the watch face. The
+      // first-start notice stays until it is accepted.
+      if (this.faceOnResume && !this.noticeOpen) {
+        this.faceOnResume = false
+        if (this.settingsOpen) this.closeSettings()
+        this.showFace()
+      }
+      // setTimeout may freeze with the screen off; restart the idle countdown.
+      if (this.view === 'detail' && !this.settingsOpen) this.armFaceTimer()
       this.updateClock()
       this.updateStatusDot()
       this.refreshGlance()
@@ -693,6 +1025,11 @@ Page(
 
     onPause() {
       this.uiPaused = true
+      this.clearFaceTimer()
+      if (this.view !== 'face' || this.settingsOpen) this.faceOnResume = true
+      try {
+        trace('ui pause view=' + (this.view || '?') + (this.settingsOpen ? ' settings' : ''))
+      } catch (e) {}
       this.touchUiAlive()
       cancelEvery(this.poll)
       this.poll = null
@@ -710,6 +1047,7 @@ Page(
         clearTimeout(this.syncRefreshTimer)
         this.syncRefreshTimer = null
       }
+      this.clearFaceTimer()
       try {
         if (this.battery && this.onBatteryChange) this.battery.offChange(this.onBatteryChange)
       } catch (e) {}
@@ -849,6 +1187,7 @@ Page(
     openSettings() {
       if (this.settingsOpen) return
       this.settingsOpen = true
+      this.clearFaceTimer()
       this.overlayW = []
       const add = (w) => {
         if (w) this.overlayW.push(w)
@@ -1788,6 +2127,7 @@ Page(
       this.lastPaintAt = 0
       this.refreshGlance()
       this.drawChart()
+      this.armFaceTimer()
     },
 
     sendLog() {
@@ -2110,6 +2450,10 @@ Page(
     setStatus(text) {
       this.lastStatusAt = Date.now()
       this.lastLog = text || ''
+      if (this.view === 'face') {
+        this.paintFace()
+        return
+      }
       if (this.uiPaused || !this.statusW) return
       this.updateStatusDot()
       if (this.lastMmol) {
@@ -2141,6 +2485,11 @@ Page(
     },
 
     updateClock() {
+      if (this.view === 'face') {
+        if (!this.uiPaused) this.paintFaceClock()
+        this.paintBattery()
+        return
+      }
       const text = fmtClock(Date.now())
       if (text !== this.lastClockText) {
         this.lastClockText = text
@@ -2156,10 +2505,29 @@ Page(
       } catch (e) {}
       if (!Number.isFinite(n)) n = 0
       n = Math.max(0, Math.min(100, Math.round(n)))
-      if (n === this.lastBattery) return
+      // lastBattery is also used in traces; the key decides the repaint.
       this.lastBattery = n
-      const w = n > 0 ? Math.max(1, Math.round((n / 100) * BATTERY_FILL_MAX)) : 0
+      const key = (this.view || 'face') + ':' + n
+      if (key === this.lastBatteryKey) return
+      this.lastBatteryKey = key
       const color = n < 10 ? COLORS.bad : n <= 20 ? COLORS.warn : COLORS.ok
+      if (this.view !== 'detail') {
+        const fw = n > 0 ? Math.max(1, Math.round((n / 100) * FACE_BAT_FILL_MAX)) : 0
+        try {
+          if (this.faceBatFillW) {
+            this.faceBatFillW.setProperty(prop.MORE, {
+              x: FACE_BAT_FILL.x,
+              y: FACE_BAT_FILL.y,
+              w: fw,
+              h: FACE_BAT_FILL.h,
+              color: color
+            })
+          }
+        } catch (e) {}
+        setText(this.faceBatPctW, n + '%', n <= 20 ? color : COLORS.muted)
+        return
+      }
+      const w = n > 0 ? Math.max(1, Math.round((n / 100) * BATTERY_FILL_MAX)) : 0
       try {
         if (this.batteryLevelW) {
           this.batteryLevelW.setProperty(prop.MORE, {
@@ -2215,11 +2583,11 @@ Page(
       const haloColor = this.dotHaloFor(color)
       try {
         if (widget.CIRCLE) {
-          this.dotHaloW = createWidget(widget.CIRCLE, {
+          this.dotHaloW = mkDetail(widget.CIRCLE, {
             ...STATUS_DOT_HALO,
             color: haloColor
           })
-          this.dotW = createWidget(widget.CIRCLE, {
+          this.dotW = mkDetail(widget.CIRCLE, {
             ...STATUS_DOT,
             color: color
           })
@@ -2229,7 +2597,7 @@ Page(
       }
       if (!this.dotW) {
         try {
-          this.dotW = createWidget(widget.FILL_RECT, {
+          this.dotW = mkDetail(widget.FILL_RECT, {
             ...STATUS_DOT_FALLBACK,
             color: color
           })
@@ -2238,21 +2606,15 @@ Page(
     },
 
     updateStatusDot() {
+      // The dot belongs to the detail view; the face shows state as text.
+      if (this.view !== 'detail') return
       const color = this.dotColorFor()
       if (this.dotW && color === this.dotColor) return
       this.dotColor = color
-      if (this.dotHaloW) {
-        try {
-          deleteWidget(this.dotHaloW)
-        } catch (e) {}
-        this.dotHaloW = null
-      }
-      if (this.dotW) {
-        try {
-          deleteWidget(this.dotW)
-        } catch (e) {}
-        this.dotW = null
-      }
+      delDetail(this.dotHaloW)
+      this.dotHaloW = null
+      delDetail(this.dotW)
+      this.dotW = null
       this.createStatusDot(color)
     },
 
@@ -2715,6 +3077,7 @@ Page(
     onChartTap(info) {
       let x = info && info.x != null ? Number(info.x) : NaN
       if (!Number.isFinite(x)) return
+      this.armFaceTimer()
       if (x >= CHART.x) x = x - CHART.x
       const third = CHART.w / 3
       if (x < third) this.stepChart(1)
@@ -2746,7 +3109,7 @@ Page(
       this.axisLabels = []
       this.chartBg = null
       try {
-        this.chartBorderW = createWidget(widget.FILL_RECT, {
+        this.chartBorderW = mkDetail(widget.FILL_RECT, {
           x: CHART.x,
           y: CHART.y,
           w: CHART.w,
@@ -2756,7 +3119,7 @@ Page(
         })
       } catch (e) {}
       try {
-        this.chartBg = createWidget(widget.FILL_RECT, {
+        this.chartBg = mkDetail(widget.FILL_RECT, {
           x: CHART.x + 1,
           y: CHART.y + 1,
           w: CHART.w - 2,
@@ -2769,7 +3132,7 @@ Page(
       }
       try {
         if (widget.CANVAS) {
-          this.chartC = createWidget(widget.CANVAS, {
+          this.chartC = mkDetail(widget.CANVAS, {
             x: CHART.x,
             y: CHART.y,
             w: CHART.w,
@@ -2786,7 +3149,7 @@ Page(
       if (!tapped) tapped = this.bindChartTap(this.chartBg)
       if (!tapped) {
         try {
-          createWidget(widget.TEXT, {
+          mkDetail(widget.TEXT, {
             ...CHART_TAP,
             click_func: (info) => {
               if (this.settingsOpen) return
@@ -2802,7 +3165,7 @@ Page(
       for (let i = 0; i < scaleN; i++) {
         try {
           this.scaleLabels.push(
-            createWidget(widget.TEXT, {
+            mkDetail(widget.TEXT, {
               x: CHART.x + CHART.w - CHART_GUTTER,
               y: CHART.y,
               w: CHART_GUTTER - CHART_SCALE_PAD_R,
@@ -2821,7 +3184,7 @@ Page(
       for (let i = 0; i < 6; i++) {
         try {
           this.axisLabels.push(
-            createWidget(widget.TEXT, {
+            mkDetail(widget.TEXT, {
               ...CHART_AXIS,
               x: CHART.x + CHART_PAD_L,
               w: axisW,
@@ -2966,6 +3329,11 @@ Page(
     },
 
     drawChart(points) {
+      if (this.view !== 'detail') {
+        // No chart on the face; it is drawn when the detail view opens.
+        this.chartDirty = true
+        return
+      }
       const list = points || loadHistory(this.chartNeedFromMs())
       if (this.chartC) {
         this.drawCanvasChart(list)
@@ -3115,7 +3483,7 @@ Page(
       while (this.chartBars.length < maxBars) {
         try {
           this.chartBars.push(
-            createWidget(widget.FILL_RECT, {
+            mkDetail(widget.FILL_RECT, {
               x: CHART.x,
               y: CHART.y + CHART.h,
               w: 1,
@@ -3189,6 +3557,11 @@ Page(
         this.chartDirty = true
         return
       }
+      if (this.view !== 'detail') {
+        this.chartDirty = true
+        this.paintFace()
+        return
+      }
       const stale = this.isStale()
       const ageMin = stale && this.lastAt ? Math.max(1, Math.floor((Date.now() - this.lastAt) / 60000)) : 0
       if (
@@ -3225,15 +3598,19 @@ Page(
       } else if (!deltaText) {
         deltaText = 'mmol/L'
       }
+      // Recreated widgets land on top of the glucose tap layer; raise it after.
+      let recreated = false
       if (glucoseText !== this.lastGlucoseText) {
         this.glucoseW = replaceTextWidget(this.glucoseW, GLUCOSE, glucoseText, color)
         this.lastGlucoseText = glucoseText
+        recreated = true
       } else {
         setText(this.glucoseW, glucoseText, color)
       }
       if (trendSrcPath !== this.lastTrendSrc) {
         this.trendW = replaceTrendImg(this.trendW, trendSrcPath)
         this.lastTrendSrc = trendSrcPath
+        recreated = true
       }
       if (this.unitW) {
         try {
@@ -3244,9 +3621,11 @@ Page(
         this.deltaW = replaceTextWidget(this.deltaW, DELTA, deltaText, deltaColor)
         this.lastDeltaText = deltaText
         this.lastDeltaColor = deltaColor
+        recreated = true
       } else {
         setText(this.deltaW, deltaText, deltaColor)
       }
+      if (recreated) this.raiseGlanceTap()
       this.lastPaintAt = at
       this.lastPaintMmol = mmol
       this.lastPaintErr = err

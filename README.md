@@ -22,6 +22,7 @@ For Libre 2+(EU) the watch connects to the sensor itself, unlocks the Bluetooth 
 
 ## Features
 
+- Watch-face style main screen: date, large time, glucose with trend arrow, and battery. Tap the glucose for the chart screen; tap it again, swipe right or wait 30 seconds to return to the watch face, which is also shown whenever the screen turns back on
 - Live glucose in mmol/L with trend arrow and change since the last reading
 - Chart with 3, 6 and 12 hour windows; tap to step back through up to 72 hours of history
 - Low and high alarms with vibration and sound, also when the app is in the background

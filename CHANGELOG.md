@@ -2,13 +2,18 @@
 
 All notable changes to AmazCGM are listed here. The newest version is at the top.
 
+## 1.8.6
+- New main screen in a minimal watch-face style: date, large time, glucose with its trend arrow, change and age, and the battery level. Glucose is white while in range and coloured only when it is high, low or old.
+- Tap the glucose to open the chart screen. To go back to the watch face, tap the glucose again, swipe right, or leave the chart screen untouched for 30 seconds. The app also opens on the watch face every time the screen turns back on.
+- New menu item at the top: a red **Disconnect** while the sensor session is on, a green **Connect** while it is off. **Disconnect** (after a confirmation) stops the sensor link and the background service, and the app no longer reopens or reconnects by itself until you tap **Connect**.
+- Menu items and buttons in Settings now light up when tapped, so you can see that a tap registered. Scrolling the menu does not highlight items.
+- Reconnects about a minute sooner after the sensor drops the link, and no longer pauses for 3 minutes after the first series of failed reconnects. Failed logins at a very weak signal no longer count as a stuck watch Bluetooth.
+- Fixed an empty Settings menu after swiping back from **Nearby devices**.
+- Longer battery life: on an Amazfit Bip Max the battery dropped from 100% to 70% in 4 days with a reading every minute, which points to roughly 13 days per charge (before: about 8–9 days). Your result depends on the watch and how you use it.
+
 ## 1.8.5
 - When Zepp OS closes the AmazCGM screen, the watch reopens it about a minute sooner and reconnects to the sensor within seconds instead of minutes.
 - Y-axis labels on the chart no longer overlap on round watches; the chart is a little taller there.
-- Menu items and buttons in Settings now light up when tapped, so you can see that a tap registered. Scrolling the menu does not highlight items.
-- New menu item at the top: a red **Disconnect** while the sensor session is on, a green **Connect** while it is off. **Disconnect** (after a confirmation) stops the sensor link and the background service, and the app no longer reopens or reconnects by itself until you tap **Connect**.
-- Fixed an empty Settings menu after swiping back from **Nearby devices**.
-- Reconnects about a minute sooner after the sensor drops the link, and no longer pauses for 3 minutes after the first series of failed reconnects. Failed logins at a very weak signal no longer count as a stuck watch Bluetooth.
 
 ## 1.8.4
 - Fixed layout for T-Rex 3 Pro 44mm
