@@ -15,7 +15,7 @@ For Libre 2+(EU) the watch connects to the sensor itself, unlocks the Bluetooth 
 > You use it entirely at your own risk.
 
 <p align="center">
-  <img src="docs/images/main.jpg" width="320" alt="AmazCGM main screen on an Amazfit Bip Max: 5.9 mmol/L, steady trend arrow and a 6-hour glucose chart with low and high limits">
+  <img src="docs/images/watch-face.jpeg" width="320" alt="AmazCGM main screen on an Amazfit Bip Max: 5.2 mmol/L, raising trend arrow and a 6-hour glucose chart with low and high limits">
 </p>
 
 <!-- TODO: add a link to a short demo video -->
